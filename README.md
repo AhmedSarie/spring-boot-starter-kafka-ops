@@ -1,109 +1,143 @@
 # Spring Boot Starter Kafka Ops
 
-A Spring Boot starter that provides REST API endpoints for Kafka message operations:
-- Retry messages by topic, partition, and offset
-- Poll messages for inspection and debugging
-- Send corrections (custom payloads) directly to consumers
+A Spring Boot starter that adds REST endpoints to your service for Kafka message operations — retry, poll, and send corrections — without any extra infrastructure.
 
-## Features
+## What it does
 
-- **REST API endpoints** for Kafka operations
-- **Manual message processing** without additional topics
-- **Simple integration** with Spring Kafka consumers
-- **Configurable endpoints** and behavior
+When your Kafka consumer fails to process a message, you typically need to manually re-consume it or write custom tooling. This starter gives you that tooling out of the box:
+
+- **Poll** — Inspect a message at a specific topic/partition/offset
+- **Retry** — Re-consume a message through your existing consumer logic
+- **Correct** — Send a corrected payload directly to your consumer
 
 ## Installation
 
-Add the following dependency to your project:
-
+**Maven:**
 ```xml
 <dependency>
     <groupId>io.github.ahmedsarie</groupId>
     <artifactId>spring-boot-starter-kafka-ops</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.1</version>
 </dependency>
 ```
 
-## Quick Start
-
-1. Add the dependency to your Spring Boot project
-
-2. Implement the `KafkaRetryAwareConsumer` interface in your Kafka consumers:
-
-```java
-@Service
-public class MyKafkaConsumer implements KafkaRetryAwareConsumer<MyEvent> {
-
-    @KafkaListener(topics = "#{__listener.getTopicName()}")
-    @Override
-    public void consume(ConsumerRecord<String, MyEvent> consumerRecord) {
-        // Your consumer logic
-    }
-
-    @Override
-    public String getTopicName() {
-        return "my-kafka-topic";
-    }
-}
+**Gradle:**
+```kotlin
+implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.1.1")
 ```
 
-3. Configure the library in your `application.yml`:
+## Usage
+
+### 1. Enable the REST API
 
 ```yaml
 kafka:
   ops:
     rest-api:
       enabled: true
-      retry-endpoint-url: operational/consumer-retries
 ```
 
-## Available REST Endpoints
+### 2. Implement `KafkaOpsAwareConsumer` on your Kafka consumers
+
+**Java:**
+```java
+@Service
+public class OrderConsumer implements KafkaOpsAwareConsumer<String, OrderEvent> {
+
+    @KafkaListener(topics = "orders")
+    @Override
+    public void consume(ConsumerRecord<String, OrderEvent> record) {
+        // your existing consumer logic
+    }
+
+    @Override
+    public String getTopicName() {
+        return "orders";
+    }
+}
+```
+
+**Kotlin:**
+```kotlin
+@Service
+class OrderConsumer : KafkaOpsAwareConsumer<String, OrderEvent> {
+
+    @KafkaListener(topics = ["orders"])
+    override fun consume(record: ConsumerRecord<String, OrderEvent>) {
+        // your existing consumer logic
+    }
+
+    override fun getTopicName() = "orders"
+}
+```
+
+That's it. The endpoints are now available for any topic registered through a `KafkaOpsAwareConsumer` bean.
+
+## REST Endpoints
 
 ### Poll a message
 ```
-GET /operational/consumer-retries?topicName=my-topic&partition=0&offset=10
+GET /operational/consumer-retries?topicName=orders&partition=0&offset=42
 ```
+Returns the message value as JSON.
 
 ### Retry a message
 ```
 POST /operational/consumer-retries
 Content-Type: application/json
 
-{
-  "topic": "my-topic",
-  "partition": 0,
-  "offset": 10
-}
+{"topic": "orders", "partition": 0, "offset": 42}
 ```
+Re-consumes the message through your consumer's `consume()` method.
 
 ### Send a correction
 ```
-POST /operational/consumer-retries/corrections
+POST /operational/consumer-retries/corrections/orders
 Content-Type: application/json
 
-{
-  "topic": "my-topic",
-  "payload": "{\"field\":\"value\"}"
+{"orderId": "123", "status": "corrected"}
+```
+Sends the payload directly to your consumer without reading from Kafka.
+
+## Configuration
+
+| Property | Default | Description |
+|---|---|---|
+| `kafka.ops.rest-api.enabled` | `false` | Enable the REST endpoints |
+| `kafka.ops.rest-api.retry-endpoint-url` | `operational/consumer-retries` | Base path for all endpoints |
+| `kafka.ops.group-id` | `default-ops-group-id` | Consumer group ID used for polling |
+| `kafka.ops.max-poll-interval-ms` | `5000` | Poll timeout in milliseconds |
+
+## Avro support
+
+If your consumer uses Avro, override `getSchema()` to enable automatic JSON-to-Avro conversion for the corrections endpoint:
+
+```java
+@Override
+public Schema getSchema() {
+    return OrderEvent.getClassSchema();
 }
 ```
 
-Or using the alternative endpoint (to avoid payload escaping):
+## Custom container factory
+
+If your consumer uses a custom `KafkaListenerContainerFactory`, override `getContainerName()` so the library uses the correct deserializer configuration:
+
+```java
+@Override
+public String getContainerName() {
+    return "myCustomContainerFactory";
+}
 ```
-POST /operational/consumer-retries/corrections/my-topic
-Content-Type: application/json
 
-{"field":"value"}
+## Development
+
+```bash
+git clone git@github.com:AhmedSarie/spring-boot-starter-kafka-ops.git
+cd spring-boot-starter-kafka-ops
+./mvnw verify
 ```
-
-## Configuration Options
-
-| Property                               | Description                                  | Default                    |
-|----------------------------------------|----------------------------------------------|----------------------------|
-| kafka.ops.group-id                     | Consumer group ID for retry consumers        | default-retry-group-id     |
-| kafka.ops.max-poll-interval-ms         | Maximum poll interval in milliseconds        | 5000                       |
-| kafka.ops.rest-api.enabled             | Enable REST API endpoints                    | false                      |
-| kafka.ops.rest-api.retry-endpoint-url  | Base URL for retry endpoints                 | operational/consumer-retries |
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT
