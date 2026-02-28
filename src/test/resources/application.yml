@@ -1,0 +1,15 @@
+spring:
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers:localhost:29092}
+    consumer:
+      group-id: reconsumerId
+      enable.auto.commit: true
+      auto.commit.interval.ms: 1000
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.IntegerDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+kafka:
+  ops:
+    rest-api:
+      enabled: true

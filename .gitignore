@@ -44,6 +44,10 @@ build/
 ### Mac OS ###
 .DS_Store
 
+### Claude Code ###
+.claude/
+SESSION_CONTEXT.md
+
 ### Logs ###
 *.log
 logs/
