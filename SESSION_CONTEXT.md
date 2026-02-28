@@ -5,7 +5,11 @@
 - **Purpose**: Error handling strategy for Kafka messages with REST API endpoints for retry, poll, and corrections
 - **Original Package**: com.wayfair.kafka.retry
 - **Original Config Prefix**: wayfair.kafka.re-consumer.*
-- **User Requirement**: Create a company-agnostic version with focus on REST API components (consumer/async approach not required)
+- **User Requirement**: Create a company-agnostic version focusing ONLY on REST API components for direct operations:
+  - Poll messages by topic/partition/offset
+  - Retry messages by topic/partition/offset
+  - Send corrections directly to topics
+- **What to Remove**: All Kafka event publishing/consuming functionality (the consumer/async approach)
 - **Future Plans**: Add embedded UI for message operations
 
 ## Key Decisions
@@ -43,29 +47,36 @@
    - src/main/resources/META-INF/spring.factories for autoconfiguration
 
 ## Original Component Analysis
-- **Controllers**:
+- **Controllers** (To Include):
   - RetryConsumerController: Endpoints for retry, poll, and corrections
-  - RetryRequestPublisherController: Endpoint for publishing retry requests
 
-- **Models**:
+- **Models** (To Include):
   - KafkaRetryRequest: Topic, partition, offset
   - KafkaCorrectionRequest: Topic, payload
   - KafkaRetryResponse: Response ID
   - KafkaPollResponse: Payload result
 
-- **Core Interfaces**:
+- **Core Interfaces** (To Include):
   - KafkaRetryAwareConsumer: Interface for consumer integration
 
-- **Services**:
-  - KafkaTopicConsumerService: Core service for operations
-  - ManualKafkaConsumer: For manual Kafka consumption
-  - KafkaRetryConsumerRegistry: Registry for consumers
+- **Services** (To Include):
+  - KafkaTopicConsumerService: Core service for operations (simplified version)
+  - ManualKafkaConsumer: For manual Kafka consumption (simplified version)
+  - KafkaRetryConsumerRegistry: Registry for consumers (simplified version)
 
-- **Configuration**:
-  - KafkaRetryConfiguration: Auto-configuration
-  - KafkaRetryProperties: Configuration properties
+- **Configuration** (To Include):
+  - KafkaOpsConfiguration: Auto-configuration (simplified version)
+  - KafkaOpsProperties: Configuration properties (simplified version)
+
+- **Components to Exclude**:
+  - RetryRequestPublisherController: Not needed as we won't implement Kafka publishing
+  - RetryRequestPublisherService: Not needed as we won't implement Kafka publishing
+  - KafkaRetryRequestConsumer: Not needed as we won't implement Kafka-based retry requests
 
 ## REST Endpoints to Implement
+
+We will only implement the following endpoints:
+
 1. **Poll Message**:
    ```
    GET /operational/consumer-retries?topicName=my-topic&partition=0&offset=10
@@ -82,22 +93,14 @@
    }
    ```
 
-3. **Process Correction**:
-   ```
-   POST /operational/consumer-retries/corrections
-   Content-Type: application/json
-   {
-     "topic": "my-topic",
-     "payload": "{\"field\":\"value\"}"
-   }
-   ```
-
-4. **Alternative Correction Endpoint**:
+3. **Alternative Correction Endpoint** (this was previously #4):
    ```
    POST /operational/consumer-retries/corrections/my-topic
    Content-Type: application/json
    {"field":"value"}
    ```
+
+Note: The original endpoint #3 (Process Correction via POST to /corrections) will be removed to simplify the implementation.
 
 ## Implementation Steps
 1. **Core Classes**:
@@ -130,18 +133,24 @@
   - Publish: /${wayfair.kafka.re-consumer.rest-api.publish-endpoint-url:operational/publish-consumer-retries}
 
 ## Configuration Properties Translation
-| Original Property | New Property |
-|-------------------|--------------|
-| wayfair.kafka.re-consumer.group-id | kafka.ops.group-id |
-| wayfair.kafka.re-consumer.max-poll-interval-ms | kafka.ops.max-poll-interval-ms |
-| wayfair.kafka.re-consumer.rest-api.enabled | kafka.ops.rest-api.enabled |
-| wayfair.kafka.re-consumer.rest-api.retry-endpoint-url | kafka.ops.rest-api.retry-endpoint-url |
-| wayfair.kafka.re-consumer.rest-api.publish-endpoint-url | kafka.ops.rest-api.publish-endpoint-url |
-| wayfair.kafka.re-consumer.kafka-api.topic | kafka.ops.kafka-api.topic |
-| wayfair.kafka.re-consumer.kafka-api.bootstrap-servers | kafka.ops.kafka-api.bootstrap-servers |
+| Original Property | New Property | Include? |
+|-------------------|--------------|----------|
+| wayfair.kafka.re-consumer.group-id | kafka.ops.group-id | Yes |
+| wayfair.kafka.re-consumer.max-poll-interval-ms | kafka.ops.max-poll-interval-ms | Yes |
+| wayfair.kafka.re-consumer.rest-api.enabled | kafka.ops.rest-api.enabled | Yes |
+| wayfair.kafka.re-consumer.rest-api.retry-endpoint-url | kafka.ops.rest-api.retry-endpoint-url | Yes |
+| wayfair.kafka.re-consumer.rest-api.publish-endpoint-url | - | No - Not needed |
+| wayfair.kafka.re-consumer.kafka-api.topic | - | No - Not needed |
+| wayfair.kafka.re-consumer.kafka-api.bootstrap-servers | - | No - Not needed |
 
 ## Additional Notes
 - Current project structure set up but no Java classes implemented yet
 - Planning to use standard Maven package structure
-- Will need to implement but simplify the Kafka consumer registry logic
-- Will maintain REST API signatures but with company-agnostic naming
+- Will significantly simplify the implementation by:
+  - Removing all Kafka-based publisher/consumer functionality
+  - Focusing only on the REST API for direct message operations
+  - Simplifying the consumer registry and service classes
+  - Reducing configuration properties to only what's needed
+- Will maintain REST API signatures for the selected endpoints with company-agnostic naming
+- The core focus is on endpoints 1, 2, and the alternative correction endpoint (previously #4)
+- This simplification will make the library more focused, easier to maintain, and more aligned with the requirements
