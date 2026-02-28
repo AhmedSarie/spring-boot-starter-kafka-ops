@@ -132,6 +132,28 @@ Note: The original endpoint #3 (Process Correction via POST to /corrections) wil
   - Retry: /${wayfair.kafka.re-consumer.rest-api.retry-endpoint-url:operational/consumer-retries}
   - Publish: /${wayfair.kafka.re-consumer.rest-api.publish-endpoint-url:operational/publish-consumer-retries}
 
+## Code Migration Approach
+1. **Package Renaming**:
+   - From: `com.wayfair.kafka.retry.*`
+   - To: `io.github.ahmedsarie.kafka.ops.*`
+
+2. **Class Renaming**:
+   - From: `KafkaRetry*` classes
+   - To: `KafkaOps*` classes
+
+3. **File Copying Strategy**:
+   - DO NOT directly copy files from the old repository
+   - Create new files with clean implementations
+   - Reference the old code structure but implement with simplified logic
+   - Remove all company-specific code, comments, and identifiers
+
+4. **Implementation Priorities**:
+   - First: Core interfaces and models
+   - Second: Service layer with simplified logic
+   - Third: REST controller
+   - Fourth: Configuration and properties
+   - Fifth: Unit tests
+
 ## Configuration Properties Translation
 | Original Property | New Property | Include? |
 |-------------------|--------------|----------|
@@ -154,3 +176,47 @@ Note: The original endpoint #3 (Process Correction via POST to /corrections) wil
 - Will maintain REST API signatures for the selected endpoints with company-agnostic naming
 - The core focus is on endpoints 1, 2, and the alternative correction endpoint (previously #4)
 - This simplification will make the library more focused, easier to maintain, and more aligned with the requirements
+
+## Dependency Replacement
+### Replace Company-Specific Dependencies:
+
+1. **Parent POM Replacement**:
+   - **Original**: `<parent><groupId>com.wayfair</groupId><artifactId>library-starter</artifactId>...</parent>`
+   - **Replace with**: Standard Spring Boot parent
+     ```xml
+     <parent>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-parent</artifactId>
+       <version>3.2.2</version>
+       <relativePath/>
+     </parent>
+     ```
+
+2. **Repository Replacement**:
+   - **Remove**: All internal repository references
+     ```xml
+     <repository>
+       <id>central</id>
+       <url>https://artifactorybase.service.csnzoo.com/artifactory/mvn-all</url>
+       ...
+     </repository>
+     ```
+   - **Replace with**: Standard Maven Central and required public repositories
+     ```xml
+     <repository>
+       <id>confluent</id>
+       <url>https://packages.confluent.io/maven/</url>
+     </repository>
+     <repository>
+       <id>maven-central</id>
+       <url>https://repo.maven.apache.org/maven2/</url>
+     </repository>
+     ```
+
+3. **Dependency Versions**:
+   - Define all version numbers in properties section
+   - Use standard open-source versions that are widely available
+
+4. **Custom Utilities**:
+   - If any internal utility classes were used, replace with standard Java/Spring alternatives
+   - For example, use standard logging instead of any proprietary logging implementations
