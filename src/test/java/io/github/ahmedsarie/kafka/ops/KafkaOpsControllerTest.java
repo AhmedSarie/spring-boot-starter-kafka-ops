@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
+import java.util.Set;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,39 @@ class KafkaOpsControllerTest {
 
   @Test
   @SneakyThrows
+  @DisplayName("should return list of registered consumers")
+  void shouldReturnRegisteredConsumers() {
+
+    // prepare
+    when(service.getRegisteredTopics()).thenReturn(Set.of("orders", "payments"));
+
+    // when
+    this.mockMvc.perform(get(RETRY_CONSUMER_API_URI + "/consumers"))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+        .andExpect(jsonPath("$").isArray())
+        .andExpect(jsonPath("$.length()").value(2));
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("should return empty list when no consumers registered")
+  void shouldReturnEmptyListWhenNoConsumers() {
+
+    // prepare
+    when(service.getRegisteredTopics()).thenReturn(Set.of());
+
+    // when
+    this.mockMvc.perform(get(RETRY_CONSUMER_API_URI + "/consumers"))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$").isArray())
+        .andExpect(jsonPath("$.length()").value(0));
+  }
+
+  @Test
+  @SneakyThrows
   @DisplayName("should retry successfully")
   void shouldRetrySuccessfully() {
 
@@ -65,13 +99,16 @@ class KafkaOpsControllerTest {
   void shouldFailWhenRetryConsumerThrow() {
 
     // prepare
-    doThrow(new RuntimeException()).when(service).retry(any());
+    doThrow(new RuntimeException("connection timeout")).when(service).retry(any());
 
     // when
     this.mockMvc.perform(post(RETRY_CONSUMER_API_URI).contentType(MediaType.APPLICATION_JSON)
             .content("{\"topic\":\"test-topic\", \"partition\":0, \"offset\":0}"))
         .andDo(print())
-        .andExpect(status().is5xxServerError());
+        .andExpect(status().is5xxServerError())
+        .andExpect(jsonPath("$.message").value("connection timeout"))
+        .andExpect(jsonPath("$.status").value(500))
+        .andExpect(jsonPath("$.error").value("Internal Server Error"));
   }
 
   @Test
@@ -80,13 +117,15 @@ class KafkaOpsControllerTest {
   void shouldReturn404WhenConsumerNotFoundExceptionIsThrown() {
 
     // prepare
-    doThrow(new NoConsumerFoundException("")).when(service).retry(any());
+    doThrow(new NoConsumerFoundException("topic not registered")).when(service).retry(any());
 
     // when
     this.mockMvc.perform(post(RETRY_CONSUMER_API_URI).contentType(MediaType.APPLICATION_JSON)
             .content("{\"topic\":\"test-topic\", \"partition\":0, \"offset\":0}"))
         .andDo(print())
-        .andExpect(status().is4xxClientError());
+        .andExpect(status().is4xxClientError())
+        .andExpect(jsonPath("$.message").value("topic not registered"))
+        .andExpect(jsonPath("$.status").value(404));
   }
 
   @Test
@@ -131,13 +170,14 @@ class KafkaOpsControllerTest {
   void pollShouldFailWhenConsumerThrow() {
 
     // prepare
-    doThrow(new RuntimeException()).when(service).poll(anyString(), anyInt(), anyLong());
+    doThrow(new RuntimeException("broker unavailable")).when(service).poll(anyString(), anyInt(), anyLong());
 
     // when
     this.mockMvc.perform(
             get(RETRY_CONSUMER_API_URI + "?topicName=test-topic&partition=0&offset=0").contentType(MediaType.APPLICATION_JSON))
         .andDo(print())
-        .andExpect(status().is5xxServerError());
+        .andExpect(status().is5xxServerError())
+        .andExpect(jsonPath("$.message").value("broker unavailable"));
   }
 
   @Test
@@ -146,13 +186,14 @@ class KafkaOpsControllerTest {
   void shouldReturn404WhenConsumerNotFoundExceptionIsThrownFromPoll() {
 
     // prepare
-    doThrow(new NoConsumerFoundException("")).when(service).poll(anyString(), anyInt(), anyLong());
+    doThrow(new NoConsumerFoundException("unknown topic")).when(service).poll(anyString(), anyInt(), anyLong());
 
     // when
     this.mockMvc.perform(
             get(RETRY_CONSUMER_API_URI + "?topicName=test-topic&partition=0&offset=0").contentType(MediaType.APPLICATION_JSON))
         .andDo(print())
-        .andExpect(status().is4xxClientError());
+        .andExpect(status().is4xxClientError())
+        .andExpect(jsonPath("$.message").value("unknown topic"));
   }
 
   @Test
@@ -193,13 +234,14 @@ class KafkaOpsControllerTest {
   void testCorrectionsWithTopicInPathThrowsException() {
 
     // prepare
-    doThrow(new RuntimeException()).when(service).process(anyString(), anyString());
+    doThrow(new RuntimeException("schema mismatch")).when(service).process(anyString(), anyString());
 
     // when
     this.mockMvc.perform(post(CORRECTIONS_API_URI + "/topic_name").contentType(MediaType.APPLICATION_JSON)
             .content(CORRECTIONS_PAYLOAD_ONLY))
         .andDo(print())
-        .andExpect(status().is5xxServerError());
+        .andExpect(status().is5xxServerError())
+        .andExpect(jsonPath("$.message").value("schema mismatch"));
   }
 
   @Test
@@ -208,12 +250,13 @@ class KafkaOpsControllerTest {
   void testCorrectionsWithTopicInPath404() {
 
     // prepare
-    doThrow(new NoConsumerFoundException("")).when(service).process(anyString(), anyString());
+    doThrow(new NoConsumerFoundException("consumer missing")).when(service).process(anyString(), anyString());
 
     // when
     this.mockMvc.perform(post(CORRECTIONS_API_URI + "/topic_name").contentType(MediaType.APPLICATION_JSON)
             .content(CORRECTIONS_PAYLOAD_ONLY))
         .andDo(print())
-        .andExpect(status().is4xxClientError());
+        .andExpect(status().is4xxClientError())
+        .andExpect(jsonPath("$.message").value("consumer missing"));
   }
 }

@@ -5,6 +5,7 @@ import static java.util.Objects.isNull;
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,10 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
   private final Map<String, Map.Entry<KafkaOpsAwareConsumer, KafkaConsumer>> registryMap = new ConcurrentHashMap<>();
   private final ListableBeanFactory beanFactory;
   private final String groupId;
+
+  Set<String> getRegisteredTopics() {
+    return Set.copyOf(registryMap.keySet());
+  }
 
   Map.Entry<KafkaOpsAwareConsumer, KafkaConsumer> find(String topic) {
     var entry = registryMap.get(topic);
