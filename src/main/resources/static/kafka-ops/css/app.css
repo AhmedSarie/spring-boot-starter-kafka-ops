@@ -139,6 +139,21 @@
     padding: 2rem 0;
 }
 
+.sidebar-disabled {
+    padding: 1rem;
+    font-size: 0.8125rem;
+    color: var(--pico-muted-color);
+    line-height: 1.6;
+}
+
+.sidebar-disabled code {
+    display: block;
+    font-family: var(--kops-font-mono);
+    font-size: 0.75rem;
+    color: var(--kops-primary);
+    margin: 0.25rem 0;
+}
+
 /* --- Main Content --- */
 .content {
     flex: 1;

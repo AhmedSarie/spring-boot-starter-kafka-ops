@@ -8,8 +8,6 @@ var Sidebar = {
             AppState.consumers = Array.isArray(data) ? data.sort() : [];
             AppState.consumersLoading = false;
         }).catch(function (e) {
-            var msg = Api.basePath ? 'Failed to load consumers' : 'Failed to load configuration';
-            Toast.error(msg + ': ' + Api.extractError(e));
             AppState.consumersLoading = false;
         });
     },
@@ -18,36 +16,44 @@ var Sidebar = {
         return m('aside.sidebar', [
             m('.sidebar-header', m('h2', 'Kafka Consumers')),
             m('.sidebar-nav[role=listbox][aria-label=Consumer topics]',
-                AppState.consumersLoading
-                    ? m('.sidebar-loading', m('.spinner.spinner-sm'))
-                    : AppState.consumers.length === 0
-                        ? m('.sidebar-empty', 'No consumers registered')
-                        : AppState.consumers.map(function (name) {
-                            var isActive = AppState.selectedTopic === name;
-                            return m('.consumer-item' + (isActive ? '.active' : ''), {
-                                key: name,
-                                role: 'option',
-                                'aria-selected': isActive ? 'true' : 'false',
-                                tabindex: '0',
-                                title: name,
-                                onclick: function () {
-                                    AppState.selectedTopic = name;
-                                    m.route.set('/poll', { topic: name });
-                                },
-                                onkeydown: function (e) {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault();
+                Api.disabled
+                    ? m('.sidebar-disabled', [
+                        m('p', 'Console is not enabled.'),
+                        m('p', 'Set the following in your application configuration:'),
+                        m('code', 'kafka.ops.console.enabled=true'),
+                        m('br'),
+                        m('code', 'kafka.ops.rest-api.enabled=true')
+                    ])
+                    : AppState.consumersLoading
+                        ? m('.sidebar-loading', m('.spinner.spinner-sm'))
+                        : AppState.consumers.length === 0
+                            ? m('.sidebar-empty', 'No consumers registered')
+                            : AppState.consumers.map(function (name) {
+                                var isActive = AppState.selectedTopic === name;
+                                return m('.consumer-item' + (isActive ? '.active' : ''), {
+                                    key: name,
+                                    role: 'option',
+                                    'aria-selected': isActive ? 'true' : 'false',
+                                    tabindex: '0',
+                                    title: name,
+                                    onclick: function () {
                                         AppState.selectedTopic = name;
                                         m.route.set('/poll', { topic: name });
+                                    },
+                                    onkeydown: function (e) {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            AppState.selectedTopic = name;
+                                            m.route.set('/poll', { topic: name });
+                                        }
                                     }
-                                }
-                            }, [
-                                m('.status-dot'),
-                                m('.consumer-item-label', name)
-                            ]);
-                        })
+                                }, [
+                                    m('.status-dot'),
+                                    m('.consumer-item-label', name)
+                                ]);
+                            })
             ),
-            m('.sidebar-footer',
+            Api.disabled ? null : m('.sidebar-footer',
                 m('p', AppState.consumers.length + ' registered topics')
             )
         ]);
