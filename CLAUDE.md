@@ -91,6 +91,11 @@ Spring Boot starter that provides REST endpoints for Kafka message operations (p
 - `LogAssert` (in `util/` subpackage) for asserting log output with Awaitility
 - Avro test classes (in `avro/` subpackage) for serialization tests
 
+## README
+
+- After making changes that affect the library's public API, configuration, features, or usage, update `README.md` to reflect the latest state
+- This includes: new endpoints, new configuration properties, new UI features, changed defaults, removed features
+
 ## CI/CD
 
 - PRs trigger `ci.yml` (build + test)
