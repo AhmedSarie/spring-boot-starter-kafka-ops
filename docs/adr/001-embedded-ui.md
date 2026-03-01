@@ -52,12 +52,11 @@ Spring Boot auto-serves files from `classpath:/static/` — no resource handler 
 
 ### Backend
 
-A dedicated `KafkaOpsConsoleController` at `/kafka-ops/api/` provides fixed endpoints for the UI, decoupling it from the configurable REST API base path. Endpoints delegate to `KafkaOpsService`:
+A `KafkaOpsConsoleController` at `/kafka-ops/api/config` provides a single endpoint that returns the configured REST API base path. The UI calls this on load to discover where the existing endpoints live, then uses the standard `KafkaOpsController` endpoints (poll, retry, corrections, consumers) at that base path.
 
-- `GET /kafka-ops/api/consumers` — list registered consumer topics
-- `GET /kafka-ops/api/poll` — poll a message
-- `POST /kafka-ops/api/retry` — retry a message
-- `POST /kafka-ops/api/corrections/{topic}` — send a correction
+- `GET /kafka-ops/api/config` — returns `{ "retryEndpointUrl": "..." }` for UI discovery
+- `GET /{base-path}/consumers` — list registered consumer topics (on existing controller)
+- All other operations use the existing REST endpoints at the configured base path
 
 ### Configuration
 

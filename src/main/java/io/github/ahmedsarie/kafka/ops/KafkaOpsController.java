@@ -37,6 +37,8 @@ class KafkaOpsController {
     } catch (Exception e) {
       log.error("Failed to list consumers", e);
       return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
+    } finally {
+      MDC.clear();
     }
   }
 
@@ -101,7 +103,8 @@ class KafkaOpsController {
   }
 
   private static ResponseEntity<Map<String, Object>> errorResponse(HttpStatus status, Exception e) {
+    var message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     return ResponseEntity.status(status).body(
-        Map.of("status", status.value(), "error", status.getReasonPhrase(), "message", e.getMessage()));
+        Map.of("status", status.value(), "error", status.getReasonPhrase(), "message", message));
   }
 }
