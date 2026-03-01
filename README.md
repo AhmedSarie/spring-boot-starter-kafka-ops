@@ -1,6 +1,6 @@
 # Spring Boot Starter Kafka Ops
 
-A Spring Boot starter that adds REST endpoints to your service for Kafka message operations — retry, poll, and send corrections — without any extra infrastructure.
+A Spring Boot starter that adds REST endpoints and an embedded web console to your service for Kafka message operations — poll, retry, and send corrections — without any extra infrastructure.
 
 ## What it does
 
@@ -8,7 +8,23 @@ When your Kafka consumer fails to process a message, you typically need to manua
 
 - **Poll** — Inspect a message at a specific topic/partition/offset
 - **Retry** — Re-consume a message through your existing consumer logic
-- **Correct** — Send a corrected payload directly to your consumer
+- **Correct** — Edit and send a corrected payload directly to your consumer
+- **Web Console** — Browser-based UI with no separate deployment needed
+
+## Web Console
+
+The library ships an embedded web UI at `/kafka-ops/index.html` — no separate deployment, no CDN, works fully offline.
+
+![Dark theme console with sidebar, JSON viewer, and correction editor](docs/console-screenshot.png)
+
+**Features:**
+- **Consumer sidebar** — Auto-discovers registered topics, resizable for long names
+- **Message polling** — Poll by partition/offset with collapsible JSON tree viewer
+- **Retry & Correct** — One-click retry or edit JSON and send corrections with diff confirmation
+- **Poll history** — Last 10 partition/offset pairs per topic, persisted across sessions
+- **Error messages** — Actionable error messages from the backend, not just HTTP status codes
+
+The console uses [Mithril.js](https://mithril.js.org) and [Pico CSS](https://picocss.com), both vendored in the JAR. No Node.js, no npm, no build step, no runtime internet required.
 
 ## Installation
 
@@ -17,13 +33,13 @@ When your Kafka consumer fails to process a message, you typically need to manua
 <dependency>
     <groupId>io.github.ahmedsarie</groupId>
     <artifactId>spring-boot-starter-kafka-ops</artifactId>
-    <version>0.1.1</version>
+    <version>0.1.2</version>
 </dependency>
 ```
 
 **Gradle:**
 ```kotlin
-implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.1.1")
+implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.1.2")
 ```
 
 ## Usage
@@ -36,6 +52,8 @@ kafka:
     rest-api:
       enabled: true
 ```
+
+This enables both the REST endpoints and the web console.
 
 ### 2. Implement `KafkaOpsAwareConsumer` on your Kafka consumers
 
@@ -71,9 +89,21 @@ class OrderConsumer : KafkaOpsAwareConsumer<String, OrderEvent> {
 }
 ```
 
-That's it. The endpoints are now available for any topic registered through a `KafkaOpsAwareConsumer` bean.
+That's it. The endpoints and console are now available for any topic registered through a `KafkaOpsAwareConsumer` bean.
+
+### 3. Open the console
+
+Navigate to `http://localhost:8080/kafka-ops/index.html` — select a consumer from the sidebar, enter partition and offset, and poll away.
 
 ## REST Endpoints
+
+All endpoints are served at a configurable base path (default: `/operational/consumer-retries`).
+
+### List registered consumers
+```
+GET /operational/consumer-retries/consumers
+```
+Returns the list of registered consumer topic names.
 
 ### Poll a message
 ```
@@ -99,11 +129,17 @@ Content-Type: application/json
 ```
 Sends the payload directly to your consumer without reading from Kafka.
 
+### Console config (used by the UI)
+```
+GET /kafka-ops/api/config
+```
+Returns the configured API base path so the UI can discover endpoints dynamically.
+
 ## Configuration
 
 | Property | Default | Description |
 |---|---|---|
-| `kafka.ops.rest-api.enabled` | `false` | Enable the REST endpoints |
+| `kafka.ops.rest-api.enabled` | `false` | Enable the REST endpoints and web console |
 | `kafka.ops.rest-api.retry-endpoint-url` | `operational/consumer-retries` | Base path for all endpoints |
 | `kafka.ops.group-id` | `default-ops-group-id` | Consumer group ID used for polling |
 | `kafka.ops.max-poll-interval-ms` | `5000` | Poll timeout in milliseconds |
@@ -129,6 +165,10 @@ public String getContainerName() {
     return "myCustomContainerFactory";
 }
 ```
+
+## Security
+
+The library does not provide authentication or authorization. Secure the endpoints and console using your application's existing security infrastructure (Spring Security, API gateway, etc.) — the same way you would secure Swagger UI or Spring Boot Actuator.
 
 ## Development
 
