@@ -13,3 +13,5 @@ kafka:
   ops:
     rest-api:
       enabled: true
+    console:
+      enabled: true

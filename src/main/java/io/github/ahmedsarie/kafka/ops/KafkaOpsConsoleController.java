@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/kafka-ops/api")
 @RequiredArgsConstructor
-@ConditionalOnProperty(value = "kafka.ops.rest-api.enabled", havingValue = "true")
+@ConditionalOnProperty(value = "kafka.ops.console.enabled", havingValue = "true")
 class KafkaOpsConsoleController {
 
   private static final String DEFAULT_RETRY_ENDPOINT_URL = "operational/consumer-retries";

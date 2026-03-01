@@ -44,16 +44,18 @@ implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.1.2")
 
 ## Usage
 
-### 1. Enable the REST API
+### 1. Enable the REST API and console
 
 ```yaml
 kafka:
   ops:
     rest-api:
-      enabled: true
+      enabled: true    # REST endpoints for programmatic access
+    console:
+      enabled: true    # Web console UI
 ```
 
-This enables both the REST endpoints and the web console.
+The REST API can be enabled independently for programmatic-only access (curl, Postman, other services). The console requires the REST API to be enabled as well — it uses the same endpoints.
 
 ### 2. Implement `KafkaOpsAwareConsumer` on your Kafka consumers
 
@@ -137,12 +139,13 @@ Returns the configured API base path so the UI can discover endpoints dynamicall
 
 ## Configuration
 
-| Property | Default | Description |
-|---|---|---|
-| `kafka.ops.rest-api.enabled` | `false` | Enable the REST endpoints and web console |
-| `kafka.ops.rest-api.retry-endpoint-url` | `operational/consumer-retries` | Base path for all endpoints |
-| `kafka.ops.group-id` | `default-ops-group-id` | Consumer group ID used for polling |
-| `kafka.ops.max-poll-interval-ms` | `5000` | Poll timeout in milliseconds |
+| Property                                | Default                        | Description                        |
+|-----------------------------------------|--------------------------------|------------------------------------|
+| `kafka.ops.rest-api.enabled`            | `false`                        | Enable the REST endpoints          |
+| `kafka.ops.console.enabled`             | `false`                        | Enable the web console UI          |
+| `kafka.ops.rest-api.retry-endpoint-url` | `operational/consumer-retries` | Base path for all endpoints        |
+| `kafka.ops.group-id`                    | `default-ops-group-id`         | Consumer group ID used for polling |
+| `kafka.ops.max-poll-interval-ms`        | `5000`                         | Poll timeout in milliseconds       |
 
 ## Avro support
 

@@ -60,13 +60,15 @@ A `KafkaOpsConsoleController` at `/kafka-ops/api/config` provides a single endpo
 
 ### Configuration
 
-The console is enabled when the REST API is enabled:
+The console and REST API have separate toggles:
 
 ```yaml
 kafka:
   ops:
     rest-api:
-      enabled: true
+      enabled: true    # REST endpoints for programmatic access
+    console:
+      enabled: true    # Web console UI (requires rest-api.enabled)
 ```
 
 ### UI Layout
