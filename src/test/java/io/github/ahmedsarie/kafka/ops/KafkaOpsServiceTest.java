@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import io.github.ahmedsarie.kafka.ops.avro.TestRecord;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -43,6 +44,20 @@ class KafkaOpsServiceTest {
   @BeforeEach
   public void beforeEach() {
     reset(contractMock);
+  }
+
+  @Test
+  @DisplayName("should return registered topics from registry")
+  void shouldReturnRegisteredTopics() {
+    // prepare
+    when(registry.getRegisteredTopics()).thenReturn(Set.of("topic-a", "topic-b"));
+
+    // when
+    var topics = service.getRegisteredTopics();
+
+    // then
+    assertEquals(Set.of("topic-a", "topic-b"), topics);
+    verify(registry).getRegisteredTopics();
   }
 
   @Test

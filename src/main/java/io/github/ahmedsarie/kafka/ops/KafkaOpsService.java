@@ -6,6 +6,7 @@ import static java.lang.String.format;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Optional;
+import java.util.Set;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.generic.GenericContainer;
@@ -22,6 +23,10 @@ public class KafkaOpsService {
     this.registry = registry;
     this.manualKafkaConsumer = manualKafkaConsumer;
     this.mapper = new ObjectMapper();
+  }
+
+  public Set<String> getRegisteredTopics() {
+    return registry.getRegisteredTopics();
   }
 
   public void process(String topic, String payload) {

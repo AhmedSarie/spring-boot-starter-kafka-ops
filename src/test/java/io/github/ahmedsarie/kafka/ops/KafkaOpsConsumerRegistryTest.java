@@ -3,6 +3,7 @@ package io.github.ahmedsarie.kafka.ops;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -53,6 +54,28 @@ public class KafkaOpsConsumerRegistryTest {
         "group.id", "reconsumerId",
         "bootstrap.servers", "127.0.0.1:50120",
         "auto.offset.reset", "earliest");
+  }
+
+  @Test
+  @DisplayName("Returns set of registered topic names")
+  void testGetRegisteredTopics() {
+    // prepare
+    var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
+    when(listableBeanFactoryMock.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(mockData);
+    when(listableBeanFactoryMock.getBean(anyString())).thenReturn(mockContainer);
+    var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
+    when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
+    when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+    when(contractMock.getTopicName()).thenReturn(registeredTopic);
+    var registry = new KafkaOpsConsumerRegistry(listableBeanFactoryMock, CONSUMER_GROUP);
+
+    // when
+    registry.afterPropertiesSet();
+    var topics = registry.getRegisteredTopics();
+
+    // then
+    assertEquals(1, topics.size());
+    assertTrue(topics.contains(registeredTopic));
   }
 
   @Test
