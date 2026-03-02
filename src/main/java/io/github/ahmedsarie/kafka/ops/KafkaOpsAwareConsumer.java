@@ -14,7 +14,15 @@ public interface KafkaOpsAwareConsumer<K, T> {
 
   void consume(ConsumerRecord<K, T> consumerRecord);
 
-  String getTopicName();
+  TopicConfig getTopic();
+
+  default TopicConfig getDltTopic() {
+    return null;
+  }
+
+  default TopicConfig getRetryTopic() {
+    return null;
+  }
 
   default String getContainerName() {
     return null;

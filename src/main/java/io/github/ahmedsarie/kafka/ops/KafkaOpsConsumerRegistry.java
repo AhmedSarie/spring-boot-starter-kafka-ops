@@ -4,6 +4,7 @@ import static java.util.Objects.isNull;
 
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,33 +34,53 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
 
   List<KafkaOpsConsumerInfo> getConsumerDetails() {
     var details = new ArrayList<KafkaOpsConsumerInfo>();
-    for (var mapEntry : registryMap.entrySet()) {
-      var topicName = mapEntry.getKey();
-      var kafkaConsumer = mapEntry.getValue().getValue();
-      try {
-        var partitionInfos = kafkaConsumer.partitionsFor(topicName);
-        var partitionCount = partitionInfos != null ? partitionInfos.size() : 0;
-        var topicPartitions = new ArrayList<TopicPartition>();
-        for (int i = 0; i < partitionCount; i++) {
-          topicPartitions.add(new TopicPartition(topicName, i));
-        }
-        long messageCount = 0;
-        if (!topicPartitions.isEmpty()) {
-          var endOffsets = kafkaConsumer.endOffsets(topicPartitions);
-          var beginningOffsets = kafkaConsumer.beginningOffsets(topicPartitions);
-          for (var tp : topicPartitions) {
-            var end = (Long) endOffsets.getOrDefault(tp, 0L);
-            var begin = (Long) beginningOffsets.getOrDefault(tp, 0L);
-            messageCount += (end - begin);
-          }
-        }
-        details.add(new KafkaOpsConsumerInfo(topicName, partitionCount, messageCount));
-      } catch (Exception e) {
-        log.warn("Failed to get consumer details for topic={}", topicName, e);
-        details.add(new KafkaOpsConsumerInfo(topicName, -1, -1));
+    var consumers = getConsumerBeans();
+    for (var consumer : consumers) {
+      var mainTopicName = consumer.getTopic().getName();
+      var mainInfo = buildTopicInfo(mainTopicName);
+
+      if (consumer.getDltTopic() != null) {
+        var dltInfo = buildTopicInfo(consumer.getDltTopic().getName());
+        mainInfo.setDlt(dltInfo);
       }
+      if (consumer.getRetryTopic() != null) {
+        var retryInfo = buildTopicInfo(consumer.getRetryTopic().getName());
+        mainInfo.setRetry(retryInfo);
+      }
+
+      details.add(mainInfo);
     }
     return details;
+  }
+
+  private KafkaOpsConsumerInfo buildTopicInfo(String topicName) {
+    var entry = registryMap.get(topicName);
+    if (entry == null) {
+      return new KafkaOpsConsumerInfo(topicName, -1, -1);
+    }
+    var kafkaConsumer = entry.getValue();
+    try {
+      var partitionInfos = kafkaConsumer.partitionsFor(topicName);
+      var partitionCount = partitionInfos != null ? partitionInfos.size() : 0;
+      var topicPartitions = new ArrayList<TopicPartition>();
+      for (int i = 0; i < partitionCount; i++) {
+        topicPartitions.add(new TopicPartition(topicName, i));
+      }
+      long messageCount = 0;
+      if (!topicPartitions.isEmpty()) {
+        var endOffsets = kafkaConsumer.endOffsets(topicPartitions);
+        var beginningOffsets = kafkaConsumer.beginningOffsets(topicPartitions);
+        for (var tp : topicPartitions) {
+          var end = (Long) endOffsets.getOrDefault(tp, 0L);
+          var begin = (Long) beginningOffsets.getOrDefault(tp, 0L);
+          messageCount += (end - begin);
+        }
+      }
+      return new KafkaOpsConsumerInfo(topicName, partitionCount, messageCount);
+    } catch (Exception e) {
+      log.warn("Failed to get consumer details for topic={}", topicName, e);
+      return new KafkaOpsConsumerInfo(topicName, -1, -1);
+    }
   }
 
   Map.Entry<KafkaOpsAwareConsumer, KafkaConsumer> find(String topic) {
@@ -81,13 +102,31 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       props.replace("group.id", groupId);
       props.put("max.poll.records", 1);
       props.put("isolation.level", "read_uncommitted");
-      var kafkaConsumer = new KafkaConsumer<>(props);
-      registryMap.put(consumer.getTopicName(), Map.entry(consumer, kafkaConsumer));
+
+      var mainTopicName = consumer.getTopic().getName();
+      var mainKafkaConsumer = new KafkaConsumer<>(props);
+      registryMap.put(mainTopicName, Map.entry(consumer, mainKafkaConsumer));
+
+      if (consumer.getDltTopic() != null) {
+        var dltProps = new HashMap<>(props);
+        var dltKafkaConsumer = new KafkaConsumer<>(dltProps);
+        registryMap.put(consumer.getDltTopic().getName(), Map.entry(consumer, dltKafkaConsumer));
+      }
+
+      if (consumer.getRetryTopic() != null) {
+        var retryProps = new HashMap<>(props);
+        var retryKafkaConsumer = new KafkaConsumer<>(retryProps);
+        registryMap.put(consumer.getRetryTopic().getName(), Map.entry(consumer, retryKafkaConsumer));
+      }
     });
   }
 
   @Override
   public void destroy() {
     registryMap.forEach((k, v) -> v.getValue().close());
+  }
+
+  private Collection<KafkaOpsAwareConsumer> getConsumerBeans() {
+    return beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class).values();
   }
 }

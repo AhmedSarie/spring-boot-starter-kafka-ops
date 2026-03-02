@@ -166,8 +166,8 @@ class EndToEndSyncFlowTest {
         }
 
         @Override
-        public String getTopicName() {
-          return TEST_TOPIC_NAME;
+        public TopicConfig getTopic() {
+          return TopicConfig.of(TEST_TOPIC_NAME);
         }
       };
     }

@@ -92,7 +92,7 @@ class KafkaOpsServiceTest {
   @DisplayName("retry should succeed when consumer record is found")
   void testRetryHappyScenario() {
     // prepare
-    when(contractMock.getTopicName()).thenReturn(topic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
     when(registry.find(topic)).thenReturn(entry);
     var consumerRecordMock = mock(ConsumerRecord.class);
     when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(consumerRecordMock));
@@ -109,7 +109,7 @@ class KafkaOpsServiceTest {
   void testProcessWithStringTopicConsumerHappyScenario() {
     // prepare
     var avroJsonMsg = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
-    when(contractMock.getTopicName()).thenReturn(topic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
     when(registry.find(topic)).thenReturn(entry);
 
     // when
@@ -124,7 +124,7 @@ class KafkaOpsServiceTest {
   void testProcessWithAvroTopicConsumerHappyScenario() {
     // prepare
     var avroJsonMsg = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
-    when(contractMock.getTopicName()).thenReturn(topic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
     when(contractMock.getSchema()).thenReturn(TestRecord.getClassSchema());
     when(registry.find(topic)).thenReturn(entry);
 
@@ -146,7 +146,7 @@ class KafkaOpsServiceTest {
   void testProcessWithStringTopicConsumerFailure() {
     // prepare
     var avroJsonMsg = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
-    when(contractMock.getTopicName()).thenReturn(topic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
     doThrow(RuntimeException.class).when(contractMock).consume(any());
     when(registry.find(topic)).thenReturn(entry);
 
@@ -158,7 +158,7 @@ class KafkaOpsServiceTest {
   @DisplayName("retry should log warning when consumer record is not found")
   void testRetryFailedScenario() {
     // prepare
-    when(contractMock.getTopicName()).thenReturn(topic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
     when(registry.find(topic)).thenReturn(entry);
     when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.empty());
     var retryRequest = new KafkaOpsRequest(topic, 0, 0L);
@@ -176,7 +176,7 @@ class KafkaOpsServiceTest {
     // prepare
     int partition = 0;
     long offset = 0L;
-    when(contractMock.getTopicName()).thenReturn(topic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
     when(registry.find(topic)).thenReturn(entry);
     var msgKey = "anything";
     var headers = new RecordHeaders();
@@ -204,7 +204,7 @@ class KafkaOpsServiceTest {
     // prepare
     int partition = 0;
     long offset = 0L;
-    when(contractMock.getTopicName()).thenReturn(topic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
     when(registry.find(topic)).thenReturn(entry);
     when(manualKafkaConsumerMock.poll(eq(topic), eq(partition), eq(offset), any())).thenReturn(Optional.empty());
 

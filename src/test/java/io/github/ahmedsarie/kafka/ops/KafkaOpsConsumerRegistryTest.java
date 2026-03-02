@@ -2,18 +2,15 @@ package io.github.ahmedsarie.kafka.ops;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
-import java.util.List;
 import java.util.Map;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.DisplayName;
@@ -41,7 +38,7 @@ public class KafkaOpsConsumerRegistryTest {
     var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
     when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
     when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
-    when(contractMock.getTopicName()).thenReturn(registeredTopic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(registeredTopic));
     var registry = new KafkaOpsConsumerRegistry(listableBeanFactoryMock, CONSUMER_GROUP);
     // when
     registry.afterPropertiesSet();
@@ -70,7 +67,7 @@ public class KafkaOpsConsumerRegistryTest {
     var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
     when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
     when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
-    when(contractMock.getTopicName()).thenReturn(registeredTopic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(registeredTopic));
     var registry = new KafkaOpsConsumerRegistry(listableBeanFactoryMock, CONSUMER_GROUP);
 
     // when
@@ -108,7 +105,7 @@ public class KafkaOpsConsumerRegistryTest {
     var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
     when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
     when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
-    when(contractMock.getTopicName()).thenReturn(registeredTopic);
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(registeredTopic));
     var registry = new KafkaOpsConsumerRegistry(listableBeanFactoryMock, CONSUMER_GROUP);
     registry.afterPropertiesSet();
 
@@ -123,5 +120,132 @@ public class KafkaOpsConsumerRegistryTest {
     // The real KafkaConsumer will throw because there's no actual broker, so we expect -1
     assertEquals(-1, details.get(0).getPartitions());
     assertEquals(-1, details.get(0).getMessageCount());
+  }
+
+  @Test
+  @DisplayName("Consumer with DLT and retry topics registers all three in the registry")
+  void testDltAndRetryTopicRegistration() {
+    // prepare
+    var dltConsumer = mock(KafkaOpsAwareConsumer.class);
+    when(dltConsumer.getTopic()).thenReturn(TopicConfig.of("main"));
+    when(dltConsumer.getDltTopic()).thenReturn(TopicConfig.of("main.DLT"));
+    when(dltConsumer.getRetryTopic()).thenReturn(TopicConfig.of("main-retry"));
+
+    var beanFactory = mock(ListableBeanFactory.class);
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("dltBean", dltConsumer));
+    var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
+    when(beanFactory.getBean(anyString())).thenReturn(mockContainer);
+    var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
+    when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
+    when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+
+    var registry = new KafkaOpsConsumerRegistry(beanFactory, CONSUMER_GROUP);
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    assertNotNull(registry.find("main"));
+    assertNotNull(registry.find("main.DLT"));
+    assertNotNull(registry.find("main-retry"));
+    assertEquals(3, registry.getRegisteredTopics().size());
+  }
+
+  @Test
+  @DisplayName("Consumer with only main topic does not register DLT or retry topics")
+  void testMainTopicOnlyNoExtraRegistration() {
+    // prepare
+    var mainOnlyConsumer = mock(KafkaOpsAwareConsumer.class);
+    when(mainOnlyConsumer.getTopic()).thenReturn(TopicConfig.of("main-only"));
+
+    var beanFactory = mock(ListableBeanFactory.class);
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("mainOnlyBean", mainOnlyConsumer));
+    var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
+    when(beanFactory.getBean(anyString())).thenReturn(mockContainer);
+    var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
+    when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
+    when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+
+    var registry = new KafkaOpsConsumerRegistry(beanFactory, CONSUMER_GROUP);
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    assertEquals(1, registry.getRegisteredTopics().size());
+    assertNotNull(registry.find("main-only"));
+    assertThrows(NoConsumerFoundException.class, () -> registry.find("main-only.DLT"));
+    assertThrows(NoConsumerFoundException.class, () -> registry.find("main-only-retry"));
+  }
+
+  @Test
+  @DisplayName("getConsumerDetails includes DLT and retry sub-objects with message counts")
+  void testGetConsumerDetailsWithDltAndRetry() {
+    // prepare
+    var dltConsumer = mock(KafkaOpsAwareConsumer.class);
+    when(dltConsumer.getTopic()).thenReturn(TopicConfig.of("orders"));
+    when(dltConsumer.getDltTopic()).thenReturn(TopicConfig.of("orders.DLT"));
+    when(dltConsumer.getRetryTopic()).thenReturn(TopicConfig.of("orders-retry"));
+
+    var beanFactory = mock(ListableBeanFactory.class);
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("ordersBean", dltConsumer));
+    var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
+    when(beanFactory.getBean(anyString())).thenReturn(mockContainer);
+    var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
+    when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
+    when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+
+    var registry = new KafkaOpsConsumerRegistry(beanFactory, CONSUMER_GROUP);
+    registry.afterPropertiesSet();
+
+    // when
+    var details = registry.getConsumerDetails();
+
+    // then
+    assertEquals(1, details.size());
+    var mainDetail = details.get(0);
+    assertEquals("orders", mainDetail.getName());
+    // Real KafkaConsumer throws — expect -1
+    assertEquals(-1, mainDetail.getPartitions());
+
+    assertNotNull(mainDetail.getDlt());
+    assertEquals("orders.DLT", mainDetail.getDlt().getName());
+    assertEquals(-1, mainDetail.getDlt().getPartitions());
+
+    assertNotNull(mainDetail.getRetry());
+    assertEquals("orders-retry", mainDetail.getRetry().getName());
+    assertEquals(-1, mainDetail.getRetry().getPartitions());
+  }
+
+  @Test
+  @DisplayName("getConsumerDetails omits DLT and retry when not declared")
+  void testGetConsumerDetailsWithoutDltAndRetry() {
+    // prepare
+    var mainOnlyConsumer = mock(KafkaOpsAwareConsumer.class);
+    when(mainOnlyConsumer.getTopic()).thenReturn(TopicConfig.of("simple"));
+
+    var beanFactory = mock(ListableBeanFactory.class);
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("simpleBean", mainOnlyConsumer));
+    var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
+    when(beanFactory.getBean(anyString())).thenReturn(mockContainer);
+    var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
+    when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
+    when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+
+    var registry = new KafkaOpsConsumerRegistry(beanFactory, CONSUMER_GROUP);
+    registry.afterPropertiesSet();
+
+    // when
+    var details = registry.getConsumerDetails();
+
+    // then
+    assertEquals(1, details.size());
+    assertEquals("simple", details.get(0).getName());
+    assertNull(details.get(0).getDlt());
+    assertNull(details.get(0).getRetry());
   }
 }
