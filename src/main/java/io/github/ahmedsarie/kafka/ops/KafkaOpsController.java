@@ -33,7 +33,7 @@ class KafkaOpsController {
   public ResponseEntity<?> getConsumers() {
     try {
       log.info("Listing registered consumers");
-      return ResponseEntity.ok(kafkaOpsService.getRegisteredTopics());
+      return ResponseEntity.ok(kafkaOpsService.getConsumerDetails());
     } catch (Exception e) {
       log.error("Failed to list consumers", e);
       return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
@@ -69,7 +69,7 @@ class KafkaOpsController {
   ) {
     try {
       log.info(format("Polling started for topic=%s - partition=%d - offset=%d", topicName, partition, offset));
-      return ResponseEntity.ok(new KafkaPollResponse(kafkaOpsService.poll(topicName, partition, offset)));
+      return ResponseEntity.ok(kafkaOpsService.poll(topicName, partition, offset));
     } catch (NoConsumerFoundException e) {
       log.error("Poll failed. consumer not found for topic ", e);
       return errorResponse(HttpStatus.NOT_FOUND, e);
@@ -78,6 +78,36 @@ class KafkaOpsController {
       return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
     } finally {
       log.info("Poll finished");
+      MDC.clear();
+    }
+  }
+
+  @GetMapping("/batch")
+  public ResponseEntity<?> batchPoll(
+      @RequestParam String topicName,
+      @RequestParam(required = false) Integer partition,
+      @RequestParam(required = false) Long startOffset,
+      @RequestParam(required = false) Long startTimestamp,
+      @RequestParam(defaultValue = "10") int limit
+  ) {
+    try {
+      log.info(format("Batch poll started for topic=%s", topicName));
+      var hasTimestamp = startTimestamp != null;
+      var hasOffset = partition != null && startOffset != null;
+      if (hasTimestamp == hasOffset) {
+        return ResponseEntity.badRequest().body(
+            Map.of("message", "Provide either partition+startOffset or startTimestamp, not both"));
+      }
+      var result = kafkaOpsService.batchPoll(topicName, partition, startOffset, startTimestamp, limit);
+      return ResponseEntity.ok(result);
+    } catch (NoConsumerFoundException e) {
+      log.error("Batch poll failed. consumer not found for topic ", e);
+      return errorResponse(HttpStatus.NOT_FOUND, e);
+    } catch (Exception e) {
+      log.error("Batch poll failed ", e);
+      return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
+    } finally {
+      log.info("Batch poll finished");
       MDC.clear();
     }
   }

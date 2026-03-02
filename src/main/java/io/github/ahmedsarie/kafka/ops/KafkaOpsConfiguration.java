@@ -40,6 +40,7 @@ public class KafkaOpsConfiguration {
   @ConditionalOnMissingBean
   public KafkaOpsService kafkaOpsService(KafkaOpsConsumerRegistry registry) {
     var manualKafkaConsumer = new ManualKafkaConsumer(Duration.ofMillis(kafkaOpsProperties.getMaxPollIntervalMs()));
-    return new KafkaOpsService(registry, manualKafkaConsumer);
+    var batchMaxLimit = kafkaOpsProperties.getBatch().getMaxLimit();
+    return new KafkaOpsService(registry, manualKafkaConsumer, batchMaxLimit);
   }
 }

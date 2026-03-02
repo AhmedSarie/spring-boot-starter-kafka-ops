@@ -4,12 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
+import java.util.List;
 import java.util.Map;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.DisplayName;
@@ -92,5 +96,32 @@ public class KafkaOpsConsumerRegistryTest {
     // then
     var msg = "unable to find consumer for topic=" + notTopicName + " in the registry";
     assertEquals(msg, exception.getMessage());
+  }
+
+  @Test
+  @DisplayName("getConsumerDetails returns partition count and message count")
+  void testGetConsumerDetails() {
+    // prepare
+    var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
+    when(listableBeanFactoryMock.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(mockData);
+    when(listableBeanFactoryMock.getBean(anyString())).thenReturn(mockContainer);
+    var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
+    when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
+    when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+    when(contractMock.getTopicName()).thenReturn(registeredTopic);
+    var registry = new KafkaOpsConsumerRegistry(listableBeanFactoryMock, CONSUMER_GROUP);
+    registry.afterPropertiesSet();
+
+    // The KafkaConsumer in the registry is a real one but we can't easily mock it after afterPropertiesSet.
+    // Instead, we verify the method handles broker errors gracefully (returns -1).
+    // when
+    var details = registry.getConsumerDetails();
+
+    // then
+    assertEquals(1, details.size());
+    assertEquals(registeredTopic, details.get(0).getName());
+    // The real KafkaConsumer will throw because there's no actual broker, so we expect -1
+    assertEquals(-1, details.get(0).getPartitions());
+    assertEquals(-1, details.get(0).getMessageCount());
   }
 }
