@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -42,5 +43,12 @@ public class KafkaOpsConfiguration {
     var manualKafkaConsumer = new ManualKafkaConsumer(Duration.ofMillis(kafkaOpsProperties.getMaxPollIntervalMs()));
     var batchMaxLimit = kafkaOpsProperties.getBatch().getMaxLimit();
     return new KafkaOpsService(registry, manualKafkaConsumer, batchMaxLimit);
+  }
+
+  @Bean
+  @ConditionalOnMissingBean
+  @ConditionalOnProperty(value = "kafka.ops.dlt-routing.enabled", havingValue = "true")
+  KafkaOpsDltRouter kafkaOpsDltRouter(ListableBeanFactory beanFactory) {
+    return new KafkaOpsDltRouter(beanFactory, kafkaOpsProperties);
   }
 }
