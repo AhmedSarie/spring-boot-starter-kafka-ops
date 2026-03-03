@@ -228,18 +228,18 @@ Returns the configured API base path so the UI can resolve endpoints dynamically
 
 ## Configuration
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| `kafka.ops.rest-api.enabled` | `false` | Enable the REST endpoints |
-| `kafka.ops.console.enabled` | `false` | Enable the web console UI |
-| `kafka.ops.rest-api.retry-endpoint-url` | `operational/consumer-retries` | Base path for all REST endpoints |
-| `kafka.ops.group-id` | `default-ops-group-id` | Consumer group ID used for polling |
-| `kafka.ops.max-poll-interval-ms` | `5000` | Timeout for single-message poll |
-| `kafka.ops.batch.max-limit` | `100` | Maximum records returned by batch browse |
-| `kafka.ops.dlt-routing.enabled` | `false` | Enable the DLT router bean |
-| `kafka.ops.dlt-routing.idle-shutdown-minutes` | `5` | Stop the router after this many minutes with no new DLT messages |
-| `kafka.ops.dlt-routing.restart-interval-minutes` | `30` | Restart the router every N minutes to check for new DLT messages |
-| `kafka.ops.dlt-routing.max-retry-count` | `3` | Skip a DLT message after it has been routed this many times (prevents infinite loops) |
+| Property                                         | Default                        | Description                                                                           |
+|--------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------|
+| `kafka.ops.rest-api.enabled`                     | `false`                        | Enable the REST endpoints                                                             |
+| `kafka.ops.console.enabled`                      | `false`                        | Enable the web console UI                                                             |
+| `kafka.ops.rest-api.retry-endpoint-url`          | `operational/consumer-retries` | Base path for all REST endpoints                                                      |
+| `kafka.ops.group-id`                             | `default-ops-group-id`         | Consumer group ID used for polling                                                    |
+| `kafka.ops.max-poll-interval-ms`                 | `5000`                         | Timeout for single-message poll                                                       |
+| `kafka.ops.batch.max-limit`                      | `100`                          | Maximum records returned by batch browse                                              |
+| `kafka.ops.dlt-routing.enabled`                  | `false`                        | Enable the DLT router bean                                                            |
+| `kafka.ops.dlt-routing.idle-shutdown-minutes`    | `5`                            | Stop the router after this many minutes with no new DLT messages                      |
+| `kafka.ops.dlt-routing.restart-interval-minutes` | `30`                           | Restart the router every N minutes to check for new DLT messages                      |
+| `kafka.ops.dlt-routing.max-retry-count`          | `3`                            | Skip a DLT message after it has been routed this many times (prevents infinite loops) |
 
 ## Auto-configured DefaultErrorHandler
 
