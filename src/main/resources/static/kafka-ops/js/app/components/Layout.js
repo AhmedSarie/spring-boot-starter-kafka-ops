@@ -1,6 +1,7 @@
 /* Shell layout: sidebar + header + content area */
 var Layout = {
     view: function (vnode) {
+        var wide = vnode.attrs.wide || false;
         return m('.layout', [
             m(Sidebar),
             m('main.content', [
@@ -11,7 +12,7 @@ var Layout = {
                     ])
                 ]),
                 m('.content-scroll',
-                    m('.content-inner', vnode.children)
+                    m('.content-inner' + (wide ? '.content-wide' : ''), vnode.children)
                 )
             ]),
             m(Toast.component)

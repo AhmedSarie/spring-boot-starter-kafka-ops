@@ -5,6 +5,7 @@ import static java.lang.String.format;
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
 import jakarta.validation.Valid;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 class KafkaOpsController {
 
   private final KafkaOpsService kafkaOpsService;
+  private final Optional<KafkaOpsDltRouter> dltRouter;
 
   @GetMapping("/consumers")
   public ResponseEntity<?> getConsumers() {
@@ -128,6 +130,44 @@ class KafkaOpsController {
       return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
     } finally {
       log.info("Correction finished");
+      MDC.clear();
+    }
+  }
+
+  @PostMapping("/dlt-routing/{topic}/start")
+  public ResponseEntity<?> startDltRouting(
+      @PathVariable("topic") String topic,
+      @RequestParam(required = false) Long fromTimestamp,
+      @RequestParam(required = false, defaultValue = "false") boolean force
+  ) {
+    try {
+      var id = UUID.randomUUID().toString();
+      MDC.put("api-response-id", id);
+
+      if (dltRouter.isEmpty()) {
+        log.error(format("DLT routing not configured — enable via kafka.ops.dlt-routing.enabled=true"));
+        return errorResponse(HttpStatus.NOT_FOUND,
+            new NoConsumerFoundException("DLT routing is not enabled. Set kafka.ops.dlt-routing.enabled=true"));
+      }
+
+      if (fromTimestamp != null) {
+        log.info(format("DLT routing start from timestamp=%d for topic=%s, force=%s",
+            fromTimestamp, topic, force));
+        dltRouter.get().startFromTimestamp(topic, fromTimestamp, force);
+      } else {
+        log.info(format("DLT routing start for topic=%s", topic));
+        dltRouter.get().start(topic);
+      }
+
+      return ResponseEntity.ok(new KafkaOpsResponse(id));
+    } catch (NoConsumerFoundException e) {
+      log.error("DLT routing failed. consumer not found for topic ", e);
+      return errorResponse(HttpStatus.NOT_FOUND, e);
+    } catch (Exception e) {
+      log.error("DLT routing failed ", e);
+      return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
+    } finally {
+      log.info("DLT routing request finished");
       MDC.clear();
     }
   }

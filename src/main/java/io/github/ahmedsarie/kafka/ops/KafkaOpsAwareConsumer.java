@@ -16,15 +16,7 @@ public interface KafkaOpsAwareConsumer<K, T> {
 
   TopicConfig getTopic();
 
-  default TopicConfig getDltTopic() {
-    return null;
-  }
-
-  default TopicConfig getRetryTopic() {
-    return null;
-  }
-
-  default String getContainerName() {
+  default ContainerConfig getContainer() {
     return null;
   }
 

@@ -730,3 +730,244 @@
     color: var(--pico-muted-color);
     margin: 0;
 }
+
+/* --- Sidebar View Toggle (Poll / Browse) --- */
+.sidebar-view-toggle {
+    display: flex;
+    gap: 2px;
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.btn-view-toggle {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    background: transparent;
+    color: var(--pico-muted-color);
+    margin: 0;
+}
+
+.btn-view-toggle:hover {
+    background: var(--pico-secondary-background);
+    color: var(--pico-color);
+}
+
+.btn-view-toggle.active {
+    background: color-mix(in srgb, var(--kops-primary) 15%, transparent);
+    color: var(--kops-primary);
+    border-color: color-mix(in srgb, var(--kops-primary) 30%, transparent);
+}
+
+/* --- Consumer Count Badge --- */
+.consumer-count {
+    font-size: 0.75rem;
+    color: var(--pico-muted-color);
+    font-weight: 400;
+}
+
+/* --- Drain DLT Button --- */
+.btn-drain-dlt {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    border: 1px solid color-mix(in srgb, var(--kops-error) 40%, transparent);
+    background: color-mix(in srgb, var(--kops-error) 10%, transparent);
+    color: var(--kops-error);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.btn-drain-dlt:hover {
+    background: color-mix(in srgb, var(--kops-error) 20%, transparent);
+    border-color: var(--kops-error);
+}
+
+.btn-drain-dlt svg {
+    width: 0.75rem;
+    height: 0.75rem;
+    pointer-events: none;
+}
+
+/* --- Result Metadata Badges --- */
+.result-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.meta-badge {
+    display: inline-block;
+    font-family: var(--kops-font-mono);
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    background: var(--pico-secondary-background);
+    color: var(--pico-muted-color);
+    border: 1px solid var(--pico-muted-border-color);
+}
+
+.meta-badge-key {
+    color: var(--kops-primary);
+    border-color: color-mix(in srgb, var(--kops-primary) 30%, transparent);
+    max-width: 20rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Headers Grid --- */
+.result-headers {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.headers-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.header-entry {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    font-family: var(--kops-font-mono);
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    background: var(--pico-secondary-background);
+    border: 1px solid var(--pico-muted-border-color);
+}
+
+.header-key {
+    color: var(--kops-primary);
+    font-weight: 600;
+}
+
+.header-key::after {
+    content: ':';
+}
+
+.header-val {
+    color: var(--pico-color);
+    word-break: break-all;
+}
+
+/* --- Browse View --- */
+.browse-mode-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.browse-offset-form {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.browse-results-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.browse-filter-input {
+    font-family: var(--kops-font-mono);
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+.browse-table-container {
+    overflow-x: auto;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 0.5rem;
+}
+
+.browse-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    margin: 0;
+}
+
+.browse-table thead th {
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pico-muted-color);
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    background: var(--pico-secondary-background);
+    position: sticky;
+    top: 0;
+}
+
+.browse-table tbody td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    vertical-align: top;
+}
+
+.browse-row {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.browse-row:hover {
+    background: var(--pico-secondary-background);
+}
+
+.browse-row-active {
+    background: color-mix(in srgb, var(--kops-primary) 10%, transparent);
+}
+
+.browse-row-active:hover {
+    background: color-mix(in srgb, var(--kops-primary) 15%, transparent);
+}
+
+.browse-cell-truncate {
+    font-family: var(--kops-font-mono);
+    font-size: 0.75rem;
+    max-width: 15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.browse-expanded-row td {
+    background: var(--pico-card-background-color);
+    padding: 1rem;
+}
+
+/* Override Pico default table margins inside browse */
+.browse-table-container table {
+    margin: 0;
+}
+
+/* Widen content area for browse view to accommodate table */
+.content-inner.content-wide {
+    max-width: 72rem;
+}
