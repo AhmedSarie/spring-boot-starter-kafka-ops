@@ -1,8 +1,30 @@
 /* Shared application state */
 var AppState = {
-    consumers: [],
+    consumers: [],          /* Array of KafkaOpsConsumerInfo objects */
     consumersLoading: true,
-    selectedTopic: ''
+    selectedTopic: '',
+
+    /* Find the consumer info object for a given topic name (main, DLT, or retry) */
+    findConsumer: function (topicName) {
+        for (var i = 0; i < this.consumers.length; i++) {
+            var c = this.consumers[i];
+            if (c.name === topicName) return c;
+            if (c.dlt && c.dlt.name === topicName) return c;
+            if (c.retry && c.retry.name === topicName) return c;
+        }
+        return null;
+    },
+
+    /* Find the main topic name for a given topic (DLT or retry resolves to parent) */
+    findMainTopicName: function (topicName) {
+        for (var i = 0; i < this.consumers.length; i++) {
+            var c = this.consumers[i];
+            if (c.name === topicName) return c.name;
+            if (c.dlt && c.dlt.name === topicName) return c.name;
+            if (c.retry && c.retry.name === topicName) return c.name;
+        }
+        return topicName;
+    }
 };
 
 /* Per-topic poll history stored in localStorage. Max 10 entries per topic. */

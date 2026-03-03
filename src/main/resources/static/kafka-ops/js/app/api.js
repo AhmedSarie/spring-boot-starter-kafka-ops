@@ -55,5 +55,20 @@ var Api = {
             body: payload,
             serialize: function (v) { return v; }
         });
+    },
+
+    batchPoll: function (topicName, params) {
+        return m.request({
+            method: 'GET',
+            url: this.basePath + '/batch',
+            params: Object.assign({ topicName: topicName }, params)
+        });
+    },
+
+    startDltRouting: function (topic) {
+        return m.request({
+            method: 'POST',
+            url: this.basePath + '/dlt-routing/' + encodeURIComponent(topic) + '/start'
+        });
     }
 };

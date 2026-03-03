@@ -1,11 +1,8 @@
 package io.github.ahmedsarie.kafka.ops;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,52 +10,21 @@ import org.junit.jupiter.api.Test;
 class TopicConfigTest {
 
   @Test
-  @DisplayName("of() creates TopicConfig with name and null retryConfig")
-  void testOfFactory() {
+  @DisplayName("of() creates TopicConfig with the given name")
+  void shouldCreateWithName() {
     // when
     var config = TopicConfig.of("orders");
 
     // then
     assertEquals("orders", config.getName());
-    assertNull(config.getRetryConfig());
-  }
-
-  @Test
-  @DisplayName("withFixedRetry creates TopicConfig with fixed retry (multiplier=1.0)")
-  void testWithFixedRetry() {
-    // when
-    var config = TopicConfig.withFixedRetry("payments", 3, 1000L);
-
-    // then
-    assertEquals("payments", config.getName());
-    assertNotNull(config.getRetryConfig());
-    assertEquals(3, config.getRetryConfig().getMaxAttempts());
-    assertEquals(1000L, config.getRetryConfig().getIntervalMs());
-    assertEquals(1.0, config.getRetryConfig().getMultiplier());
-    assertFalse(config.getRetryConfig().isExponential());
-  }
-
-  @Test
-  @DisplayName("withExponentialRetry creates TopicConfig with exponential retry")
-  void testWithExponentialRetry() {
-    // when
-    var config = TopicConfig.withExponentialRetry("events", 5, 500L, 2.0);
-
-    // then
-    assertEquals("events", config.getName());
-    assertNotNull(config.getRetryConfig());
-    assertEquals(5, config.getRetryConfig().getMaxAttempts());
-    assertEquals(500L, config.getRetryConfig().getIntervalMs());
-    assertEquals(2.0, config.getRetryConfig().getMultiplier());
-    assertTrue(config.getRetryConfig().isExponential());
   }
 
   @Test
   @DisplayName("equals compares by name only")
-  void testEqualsOnNameOnly() {
+  void shouldEqualByNameOnly() {
     // prepare
     var config1 = TopicConfig.of("orders");
-    var config2 = TopicConfig.withFixedRetry("orders", 3, 1000L);
+    var config2 = TopicConfig.of("orders");
     var config3 = TopicConfig.of("payments");
 
     // then
@@ -68,10 +34,10 @@ class TopicConfigTest {
 
   @Test
   @DisplayName("hashCode is based on name only")
-  void testHashCodeOnNameOnly() {
+  void shouldHashByNameOnly() {
     // prepare
     var config1 = TopicConfig.of("orders");
-    var config2 = TopicConfig.withFixedRetry("orders", 3, 1000L);
+    var config2 = TopicConfig.of("orders");
 
     // then
     assertEquals(config1.hashCode(), config2.hashCode());
@@ -79,7 +45,7 @@ class TopicConfigTest {
 
   @Test
   @DisplayName("equals returns false for null and different type")
-  void testEqualsEdgeCases() {
+  void shouldNotEqualNullOrDifferentType() {
     // prepare
     var config = TopicConfig.of("orders");
 
@@ -90,7 +56,7 @@ class TopicConfigTest {
 
   @Test
   @DisplayName("equals returns true for same instance")
-  void testEqualsSameInstance() {
+  void shouldEqualSameInstance() {
     // prepare
     var config = TopicConfig.of("orders");
 
@@ -99,30 +65,68 @@ class TopicConfigTest {
   }
 
   @Test
-  @DisplayName("toString contains name and retryConfig")
-  void testToString() {
-    // prepare
-    var config = TopicConfig.withFixedRetry("orders", 3, 1000L);
-
+  @DisplayName("of() has null dltTopic and retryTopic by default")
+  void shouldHaveNullSubTopicsByDefault() {
     // when
-    var result = config.toString();
+    var config = TopicConfig.of("orders");
 
     // then
-    assertTrue(result.contains("orders"));
-    assertTrue(result.contains("RetryConfig"));
+    assertNull(config.getDltTopic());
+    assertNull(config.getRetryTopic());
   }
 
   @Test
-  @DisplayName("toString for simple config contains null retryConfig")
-  void testToStringNoRetry() {
-    // prepare
-    var config = TopicConfig.of("orders");
-
+  @DisplayName("withDlt() sets dltTopic and returns new instance")
+  void shouldSetDltTopic() {
     // when
-    var result = config.toString();
+    var config = TopicConfig.of("orders").withDlt("orders.DLT");
 
     // then
-    assertTrue(result.contains("orders"));
-    assertTrue(result.contains("null"));
+    assertEquals("orders.DLT", config.getDltTopic());
+    assertNull(config.getRetryTopic());
+  }
+
+  @Test
+  @DisplayName("withRetry() sets retryTopic and returns new instance")
+  void shouldSetRetryTopic() {
+    // when
+    var config = TopicConfig.of("orders").withRetry("orders-retry");
+
+    // then
+    assertNull(config.getDltTopic());
+    assertEquals("orders-retry", config.getRetryTopic());
+  }
+
+  @Test
+  @DisplayName("withDlt().withRetry() sets both sub-topics")
+  void shouldSetBothSubTopics() {
+    // when
+    var config = TopicConfig.of("orders").withDlt("orders.DLT").withRetry("orders-retry");
+
+    // then
+    assertEquals("orders.DLT", config.getDltTopic());
+    assertEquals("orders-retry", config.getRetryTopic());
+  }
+
+  @Test
+  @DisplayName("equals ignores dltTopic and retryTopic — name only")
+  void shouldEqualRegardlessOfSubTopics() {
+    // prepare
+    var plain = TopicConfig.of("orders");
+    var withSubs = TopicConfig.of("orders").withDlt("orders.DLT").withRetry("orders-retry");
+
+    // then
+    assertEquals(plain, withSubs);
+    assertEquals(plain.hashCode(), withSubs.hashCode());
+  }
+
+  @Test
+  @DisplayName("toString contains name, dltTopic, and retryTopic")
+  void shouldIncludeAllFieldsInToString() {
+    // when
+    var result = TopicConfig.of("orders").withDlt("orders.DLT").withRetry("orders-retry").toString();
+
+    // then
+    assertEquals("TopicConfig(name=orders, dltTopic=orders.DLT, retryTopic=orders-retry)", result);
   }
 }
