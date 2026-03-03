@@ -6,12 +6,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -30,9 +26,11 @@ import org.springframework.kafka.listener.ConsumerAwareRebalanceListener;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.MessageListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.util.backoff.FixedBackOff;
 
 @Slf4j
+@RequiredArgsConstructor
 class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
   private static final String RETRY_COUNT_HEADER = "kafka-ops-retry-count";
@@ -40,8 +38,6 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
   private final ListableBeanFactory beanFactory;
   private final KafkaOpsProperties kafkaOpsProperties;
   private final Map<String, RouteState> routes = new ConcurrentHashMap<>();
-  private final ScheduledExecutorService scheduler;
-  private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
   private KafkaTemplate<byte[], byte[]> kafkaTemplate;
 
   void setKafkaTemplate(KafkaTemplate<byte[], byte[]> template) {
@@ -55,21 +51,10 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     }
   }
 
-  KafkaOpsDltRouter(ListableBeanFactory beanFactory, KafkaOpsProperties kafkaOpsProperties) {
-    this.beanFactory = beanFactory;
-    this.kafkaOpsProperties = kafkaOpsProperties;
-    this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-      var thread = new Thread(r, "dlt-router-scheduler");
-      thread.setDaemon(true);
-      return thread;
-    });
-  }
-
   @Override
   public void afterPropertiesSet() {
     for (var consumer : KafkaOpsFactoryUtils.getConsumerBeans(beanFactory)) {
       var mainTopicName = consumer.getTopic().getName();
-
       var dltTopicName = consumer.getTopic().getDltTopic();
       var retryTopicName = consumer.getTopic().getRetryTopic();
 
@@ -124,6 +109,16 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     log.info("Started DLT router for topic={} from timestamp={}, force={}", mainTopic, timestamp, force);
   }
 
+  @Scheduled(cron = "${kafka.ops.dlt-routing.restart-cron:0 */30 * * * *}")
+  void scheduledRestart() {
+    routes.forEach((mainTopic, state) -> {
+      if (!state.getContainer().isRunning()) {
+        state.getContainer().start();
+        log.info("Scheduled restart of DLT router for topic={}", mainTopic);
+      }
+    });
+  }
+
   @EventListener
   void onIdleEvent(ListenerContainerIdleEvent event) {
     var idleContainer = event.getContainer(ConcurrentMessageListenerContainer.class);
@@ -138,7 +133,6 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
       if (state.getContainer() == idleContainer && state.getContainer().isRunning()) {
         state.getContainer().stop();
         log.info("Stopped idle DLT router for topic={}", mainTopic);
-        scheduleRestart(mainTopic, state);
         break;
       }
     }
@@ -146,16 +140,11 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
   @Override
   public void destroy() {
-    shuttingDown.set(true);
     routes.values().forEach(state -> {
-      if (state.getScheduledRestart() != null) {
-        state.getScheduledRestart().cancel(false);
-      }
       if (state.getContainer().isRunning()) {
         state.getContainer().stop();
       }
     });
-    scheduler.shutdownNow();
   }
 
   // --- Container creation ---
@@ -258,19 +247,6 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
   // --- Helpers ---
 
-  private void scheduleRestart(String mainTopic, RouteState state) {
-    var interval = kafkaOpsProperties.getDltRouting().getRestartIntervalMinutes();
-    if (interval > 0 && !shuttingDown.get()) {
-      var future = scheduler.schedule(() -> {
-        if (!shuttingDown.get() && !state.getContainer().isRunning()) {
-          state.getContainer().start();
-          log.info("Restarted DLT router for topic={} after {} minute(s)", mainTopic, interval);
-        }
-      }, interval, TimeUnit.MINUTES);
-      state.setScheduledRestart(future);
-    }
-  }
-
   private RouteState getRouteOrThrow(String mainTopic) {
     var state = routes.get(mainTopic);
     if (state == null) {
@@ -287,7 +263,6 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     private final String retryTopic;
     private final KafkaOpsAwareConsumer consumer;
     private volatile boolean force;
-    private volatile ScheduledFuture<?> scheduledRestart;
 
     RouteState(ConcurrentMessageListenerContainer<byte[], byte[]> container,
                String retryTopic, KafkaOpsAwareConsumer consumer) {
@@ -302,10 +277,6 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
     void setForce(boolean force) {
       this.force = force;
-    }
-
-    void setScheduledRestart(ScheduledFuture<?> future) {
-      this.scheduledRestart = future;
     }
   }
 }

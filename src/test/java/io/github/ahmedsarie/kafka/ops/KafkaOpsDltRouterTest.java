@@ -40,7 +40,7 @@ class KafkaOpsDltRouterTest {
   void setUp() {
     beanFactory = mock(ListableBeanFactory.class);
     properties = new KafkaOpsProperties(null, "test-ops-group", null, null,
-        new KafkaOpsProperties.DltRouting(true, 5, 30, 3));
+        new KafkaOpsProperties.DltRouting(true, 5, "0 */30 * * * *", 3));
     mockTemplate = mock(KafkaTemplate.class);
   }
 
@@ -137,7 +137,7 @@ class KafkaOpsDltRouterTest {
   }
 
   @Test
-  @DisplayName("destroy stops all containers and shuts down scheduler")
+  @DisplayName("destroy stops all running containers cleanly")
   void shouldDestroyCleanly() {
     // prepare
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(Map.of());
