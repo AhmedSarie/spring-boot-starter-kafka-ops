@@ -99,7 +99,7 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       var consumerContainer = containerConfig != null ? containerConfig.getName() : DEF_FACTORY_BEAN_NAME;
       var factory = (ConcurrentKafkaListenerContainerFactory) beanFactory.getBean(consumerContainer);
       var props = new HashMap<>(factory.getConsumerFactory().getConfigurationProperties());
-      props.replace("group.id", groupId);
+      props.put("group.id", groupId);
       props.put("max.poll.records", 1);
       props.put("isolation.level", "read_uncommitted");
 

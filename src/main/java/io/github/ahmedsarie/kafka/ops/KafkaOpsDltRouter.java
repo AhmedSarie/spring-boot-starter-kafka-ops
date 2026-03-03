@@ -81,6 +81,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
   void start(String mainTopic) {
     var state = getRouteOrThrow(mainTopic);
+    state.setWasEverStarted(true);
     if (!state.getContainer().isRunning()) {
       state.setForce(false);
       state.getContainer().start();
@@ -105,6 +106,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
     state.setContainer(newContainer);
     state.setForce(force);
+    state.setWasEverStarted(true);
     newContainer.start();
     log.info("Started DLT router for topic={} from timestamp={}, force={}", mainTopic, timestamp, force);
   }
@@ -112,7 +114,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
   @Scheduled(cron = "${kafka.ops.dlt-routing.restart-cron:0 */30 * * * *}")
   void scheduledRestart() {
     routes.forEach((mainTopic, state) -> {
-      if (!state.getContainer().isRunning()) {
+      if (state.isWasEverStarted() && !state.getContainer().isRunning()) {
         state.getContainer().start();
         log.info("Scheduled restart of DLT router for topic={}", mainTopic);
       }
@@ -263,6 +265,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     private final String retryTopic;
     private final KafkaOpsAwareConsumer consumer;
     private volatile boolean force;
+    private volatile boolean wasEverStarted;
 
     RouteState(ConcurrentMessageListenerContainer<byte[], byte[]> container,
                String retryTopic, KafkaOpsAwareConsumer consumer) {
@@ -277,6 +280,10 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
     void setForce(boolean force) {
       this.force = force;
+    }
+
+    void setWasEverStarted(boolean wasEverStarted) {
+      this.wasEverStarted = wasEverStarted;
     }
   }
 }
