@@ -1,10 +1,11 @@
-/* Poll view — poll form + history + JSON result + retry/correct actions */
+/* Poll view — poll form + history + enriched JSON result + retry/correct actions */
 var PollView = (function () {
     var state = {
         topic: '',
         partition: 0,
         offset: 0,
-        message: null,
+        message: null,       /* raw consumerRecordValue string */
+        pollResponse: null,  /* full enriched response object */
         polling: false,
         retrying: false,
         showEditor: false,
@@ -20,6 +21,15 @@ var PollView = (function () {
         return state.topic ? PollHistory.get(state.topic) : [];
     }
 
+    function formatTimestamp(ts) {
+        if (!ts) return '';
+        try {
+            return new Date(ts).toISOString().replace('T', ' ').replace('Z', ' UTC');
+        } catch (e) {
+            return String(ts);
+        }
+    }
+
     function pollMessage() {
         if (!state.topic) { Toast.error('No topic selected'); return; }
         if (state.partition < 0) { Toast.error('Partition must be >= 0'); return; }
@@ -27,11 +37,16 @@ var PollView = (function () {
 
         state.polling = true;
         state.message = null;
+        state.pollResponse = null;
         state.showEditor = false;
 
         Api.poll(state.topic, state.partition, state.offset).then(function (data) {
+            state.pollResponse = data;
             state.message = data.consumerRecordValue;
             if (state.message) {
+                /* Use response partition/offset if available */
+                if (data.partition !== undefined) state.partition = data.partition;
+                if (data.offset !== undefined) state.offset = data.offset;
                 PollHistory.add(state.topic, state.partition, state.offset);
                 Toast.success('Message polled successfully');
             } else {
@@ -112,6 +127,7 @@ var PollView = (function () {
         state.partition = 0;
         state.offset = 0;
         state.message = null;
+        state.pollResponse = null;
         state.polling = false;
         state.retrying = false;
         state.showEditor = false;
@@ -124,6 +140,44 @@ var PollView = (function () {
     function selectHistory(entry) {
         state.partition = entry.partition;
         state.offset = entry.offset;
+    }
+
+    function renderMetadataBadges() {
+        var resp = state.pollResponse;
+        if (!resp) return null;
+
+        var badges = [];
+        if (resp.partition !== undefined) {
+            badges.push(m('span.meta-badge', { key: 'p' }, 'P' + resp.partition));
+        }
+        if (resp.offset !== undefined) {
+            badges.push(m('span.meta-badge', { key: 'o' }, 'O' + resp.offset));
+        }
+        if (resp.timestamp) {
+            badges.push(m('span.meta-badge', { key: 'ts' }, formatTimestamp(resp.timestamp)));
+        }
+        if (resp.key) {
+            badges.push(m('span.meta-badge.meta-badge-key', { key: 'k', title: resp.key },
+                'Key: ' + (resp.key.length > 30 ? resp.key.slice(0, 30) + '...' : resp.key)));
+        }
+        return badges.length > 0 ? m('.result-metadata', badges) : null;
+    }
+
+    function renderHeaders() {
+        var resp = state.pollResponse;
+        if (!resp || !resp.headers) return null;
+        var keys = Object.keys(resp.headers);
+        if (keys.length === 0) return null;
+
+        return m('.result-headers', [
+            m('span.result-label', 'Headers'),
+            m('.headers-grid', keys.map(function (k) {
+                return m('.header-entry', { key: k }, [
+                    m('span.header-key', k),
+                    m('span.header-val', resp.headers[k])
+                ]);
+            }))
+        ]);
     }
 
     return {
@@ -203,6 +257,13 @@ var PollView = (function () {
                         m('span.result-label', 'Consumer Record Value'),
                         m('span.result-meta', 'P' + state.partition + ' / O' + state.offset)
                     ]),
+
+                    /* Enriched metadata badges */
+                    renderMetadataBadges(),
+
+                    /* Headers */
+                    renderHeaders(),
+
                     m(JsonViewer, { data: state.message }),
                     m('.action-buttons', [
                         m('button.btn.btn-secondary[type=button]', {

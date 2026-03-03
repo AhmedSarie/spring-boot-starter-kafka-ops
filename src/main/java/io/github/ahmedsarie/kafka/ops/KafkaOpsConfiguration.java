@@ -3,6 +3,7 @@ package io.github.ahmedsarie.kafka.ops;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -13,7 +14,9 @@ import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.util.ObjectUtils;
 
 @Slf4j
@@ -34,7 +37,7 @@ public class KafkaOpsConfiguration {
     var groupId = ObjectUtils.isEmpty(kafkaOpsProperties.getGroupId())
         ? DEFAULT_GROUP_ID
         : kafkaOpsProperties.getGroupId();
-    return new KafkaOpsConsumerRegistry(listableBeanFactory, groupId);
+    return new KafkaOpsConsumerRegistry(listableBeanFactory, groupId, KafkaConsumer::new);
   }
 
   @Bean
@@ -50,5 +53,11 @@ public class KafkaOpsConfiguration {
   @ConditionalOnProperty(value = "kafka.ops.dlt-routing.enabled", havingValue = "true")
   KafkaOpsDltRouter kafkaOpsDltRouter(ListableBeanFactory beanFactory) {
     return new KafkaOpsDltRouter(beanFactory, kafkaOpsProperties);
+  }
+
+  @Configuration
+  @EnableScheduling
+  @ConditionalOnProperty(value = "kafka.ops.dlt-routing.enabled", havingValue = "true")
+  static class DltSchedulingConfiguration {
   }
 }

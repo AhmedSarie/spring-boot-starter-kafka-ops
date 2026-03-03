@@ -1,7 +1,5 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import static java.util.Objects.isNull;
-
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -22,7 +20,8 @@ final class KafkaOpsFactoryUtils {
   @SuppressWarnings("unchecked")
   static ConcurrentKafkaListenerContainerFactory resolveFactory(
       KafkaOpsAwareConsumer consumer, ListableBeanFactory beanFactory) {
-    var name = isNull(consumer.getContainerName()) ? DEF_FACTORY_BEAN_NAME : consumer.getContainerName();
+    var container = consumer.getContainer();
+    var name = container != null ? container.getName() : DEF_FACTORY_BEAN_NAME;
     return (ConcurrentKafkaListenerContainerFactory) beanFactory.getBean(name);
   }
 
