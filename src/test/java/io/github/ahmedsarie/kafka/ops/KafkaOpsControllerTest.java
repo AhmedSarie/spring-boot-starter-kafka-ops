@@ -36,6 +36,7 @@ class KafkaOpsControllerTest {
 
   private static final String RETRY_CONSUMER_API_URI = "/operational/consumer-retries";
   private static final String CORRECTIONS_API_URI = RETRY_CONSUMER_API_URI + "/corrections";
+  private static final String DLT_ROUTING_API_URI = RETRY_CONSUMER_API_URI + "/dlt-routing";
   private static final String CORRECTIONS_PAYLOAD_ONLY = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
 
   @Autowired
@@ -43,6 +44,9 @@ class KafkaOpsControllerTest {
 
   @MockBean
   private KafkaOpsService service;
+
+  @MockBean
+  private KafkaOpsDltRouter dltRouter;
 
   @Test
   @SneakyThrows
@@ -345,5 +349,89 @@ class KafkaOpsControllerTest {
         .andDo(print())
         .andExpect(status().is4xxClientError())
         .andExpect(jsonPath("$.message").value("consumer missing"));
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("DLT routing start should return 200 on success")
+  void shouldStartDltRoutingSuccessfully() {
+
+    // prepare
+    doNothing().when(dltRouter).start("orders");
+
+    // when
+    this.mockMvc.perform(post(DLT_ROUTING_API_URI + "/orders/start"))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").exists());
+
+    verify(dltRouter).start("orders");
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("DLT routing start with fromTimestamp should return 200 on success")
+  void shouldStartDltRoutingWithTimestamp() {
+
+    // prepare
+    doNothing().when(dltRouter).startFromTimestamp("orders", 1709251200000L, false);
+
+    // when
+    this.mockMvc.perform(post(DLT_ROUTING_API_URI + "/orders/start?fromTimestamp=1709251200000"))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").exists());
+
+    verify(dltRouter).startFromTimestamp("orders", 1709251200000L, false);
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("DLT routing start with fromTimestamp and force should return 200 on success")
+  void shouldStartDltRoutingWithTimestampAndForce() {
+
+    // prepare
+    doNothing().when(dltRouter).startFromTimestamp("orders", 1709251200000L, true);
+
+    // when
+    this.mockMvc.perform(
+            post(DLT_ROUTING_API_URI + "/orders/start?fromTimestamp=1709251200000&force=true"))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").exists());
+
+    verify(dltRouter).startFromTimestamp("orders", 1709251200000L, true);
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("DLT routing start should return 404 when topic not configured")
+  void shouldReturn404WhenDltRouterTopicNotFound() {
+
+    // prepare
+    doThrow(new NoConsumerFoundException("No DLT router configured for topic=unknown"))
+        .when(dltRouter).start("unknown");
+
+    // when
+    this.mockMvc.perform(post(DLT_ROUTING_API_URI + "/unknown/start"))
+        .andDo(print())
+        .andExpect(status().is4xxClientError())
+        .andExpect(jsonPath("$.message").value("No DLT router configured for topic=unknown"))
+        .andExpect(jsonPath("$.status").value(404));
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("DLT routing start should return 500 on unexpected error")
+  void shouldReturn500WhenDltRouterThrowsUnexpectedException() {
+
+    // prepare
+    doThrow(new RuntimeException("kafka broker down")).when(dltRouter).start("orders");
+
+    // when
+    this.mockMvc.perform(post(DLT_ROUTING_API_URI + "/orders/start"))
+        .andDo(print())
+        .andExpect(status().is5xxServerError())
+        .andExpect(jsonPath("$.message").value("kafka broker down"));
   }
 }
