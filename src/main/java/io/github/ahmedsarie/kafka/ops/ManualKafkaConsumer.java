@@ -22,7 +22,7 @@ import org.apache.kafka.common.TopicPartition;
 @RequiredArgsConstructor
 class ManualKafkaConsumer {
 
-  private static final int MAX_EMPTY_POLLS = 10;
+  private static final Duration BATCH_POLL_TIMEOUT = Duration.ofMillis(200);
   private final Duration pollDuration;
 
   synchronized <T> Optional<ConsumerRecord<String, T>> poll(
@@ -80,14 +80,11 @@ class ManualKafkaConsumer {
       KafkaConsumer<String, T> kafkaConsumer, int limit
   ) {
     var result = new ArrayList<ConsumerRecord<String, T>>();
-    var emptyPolls = 0;
-    while (result.size() < limit && emptyPolls < MAX_EMPTY_POLLS) {
-      var records = kafkaConsumer.poll(pollDuration);
+    while (result.size() < limit) {
+      var records = kafkaConsumer.poll(BATCH_POLL_TIMEOUT);
       if (records.isEmpty()) {
-        emptyPolls++;
-        continue;
+        break;
       }
-      emptyPolls = 0;
       for (var record : records) {
         result.add(record);
         if (result.size() >= limit) {
