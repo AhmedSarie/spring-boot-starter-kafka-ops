@@ -79,29 +79,9 @@ public class OrderConsumer implements KafkaOpsAwareConsumer<String, OrderEvent> 
 }
 ```
 
-**With per-topic retry backoff:**
-
-```java
-@Override
-public TopicConfig getTopic() {
-    // Fixed: 3 attempts, 1 second between retries
-    return TopicConfig.withFixedRetry("orders", 3, 1000);
-
-    // Exponential: 3 attempts, starting at 500ms, doubling each time
-    return TopicConfig.withExponentialRetry("orders", 3, 500, 2.0);
-}
-```
-
-When a `RetryConfig` is declared, the library auto-creates a `DefaultErrorHandler` bean with the configured backoff — you don't need to define one yourself.
-
 **With DLT and retry topics:**
 
 ```java
-@Override
-public TopicConfig getTopic() {
-    return TopicConfig.withFixedRetry("orders", 3, 1000);
-}
-
 @Override
 public TopicConfig getDltTopic() {
     return TopicConfig.of("orders.DLT");
@@ -109,13 +89,11 @@ public TopicConfig getDltTopic() {
 
 @Override
 public TopicConfig getRetryTopic() {
-    return TopicConfig.withFixedRetry("orders-retry", 5, 2000);
+    return TopicConfig.of("orders-retry");
 }
 ```
 
-Declaring both `getDltTopic()` and `getRetryTopic()` enables:
-- Automatic routing in the `DefaultErrorHandler`: `orders` → `orders-retry` → `orders.DLT`
-- DLT routing via the API: route messages from `orders.DLT` back to `orders-retry` for reprocessing
+Declaring both `getDltTopic()` and `getRetryTopic()` enables DLT routing via the API: route messages from `orders.DLT` back to `orders-retry` for reprocessing.
 
 **Kotlin:**
 ```kotlin
@@ -240,14 +218,6 @@ Returns the configured API base path so the UI can resolve endpoints dynamically
 | `kafka.ops.dlt-routing.idle-shutdown-minutes`    | `5`                            | Stop the router after this many minutes with no new DLT messages                      |
 | `kafka.ops.dlt-routing.restart-interval-minutes` | `30`                           | Restart the router every N minutes to check for new DLT messages                      |
 | `kafka.ops.dlt-routing.max-retry-count`          | `3`                            | Skip a DLT message after it has been routed this many times (prevents infinite loops) |
-
-## Auto-configured DefaultErrorHandler
-
-When any `KafkaOpsAwareConsumer` declares a `RetryConfig` (via `TopicConfig.withFixedRetry` / `withExponentialRetry`) or declares DLT/retry topics, the library automatically registers a `DefaultErrorHandler` bean with:
-
-- **Per-topic backoff** — each topic uses its own retry interval and attempt count
-- **Automatic routing** — failed records on `orders` go to `orders-retry`; exhausted retries on `orders-retry` go to `orders.DLT`
-- **`@ConditionalOnMissingBean`** — if you define your own `DefaultErrorHandler`, the library's bean is skipped entirely
 
 ## Avro support
 
