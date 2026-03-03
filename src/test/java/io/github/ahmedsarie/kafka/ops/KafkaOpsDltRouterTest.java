@@ -62,9 +62,7 @@ class KafkaOpsDltRouterTest {
   void shouldSkipConsumerWithOnlyDlt() {
     // prepare
     var consumer = mock(KafkaOpsAwareConsumer.class);
-    when(consumer.getTopic()).thenReturn(TopicConfig.of("payments"));
-    when(consumer.getDltTopic()).thenReturn(TopicConfig.of("payments.DLT"));
-    when(consumer.getRetryTopic()).thenReturn(null);
+    when(consumer.getTopic()).thenReturn(TopicConfig.of("payments").withDlt("payments.DLT"));
 
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
         .thenReturn(Map.of("paymentsBean", consumer));
@@ -82,9 +80,7 @@ class KafkaOpsDltRouterTest {
   void shouldSkipConsumerWithOnlyRetry() {
     // prepare
     var consumer = mock(KafkaOpsAwareConsumer.class);
-    when(consumer.getTopic()).thenReturn(TopicConfig.of("notifications"));
-    when(consumer.getDltTopic()).thenReturn(null);
-    when(consumer.getRetryTopic()).thenReturn(TopicConfig.of("notifications-retry"));
+    when(consumer.getTopic()).thenReturn(TopicConfig.of("notifications").withRetry("notifications-retry"));
 
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
         .thenReturn(Map.of("notificationsBean", consumer));
@@ -103,8 +99,6 @@ class KafkaOpsDltRouterTest {
     // prepare
     var consumer = mock(KafkaOpsAwareConsumer.class);
     when(consumer.getTopic()).thenReturn(TopicConfig.of("simple"));
-    when(consumer.getDltTopic()).thenReturn(null);
-    when(consumer.getRetryTopic()).thenReturn(null);
 
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
         .thenReturn(Map.of("simpleBean", consumer));
@@ -311,9 +305,7 @@ class KafkaOpsDltRouterTest {
 
   private KafkaOpsAwareConsumer mockConsumer(String main, String dlt, String retry) {
     var consumer = mock(KafkaOpsAwareConsumer.class);
-    when(consumer.getTopic()).thenReturn(TopicConfig.of(main));
-    when(consumer.getDltTopic()).thenReturn(TopicConfig.of(dlt));
-    when(consumer.getRetryTopic()).thenReturn(TopicConfig.of(retry));
+    when(consumer.getTopic()).thenReturn(TopicConfig.of(main).withDlt(dlt).withRetry(retry));
     return consumer;
   }
 

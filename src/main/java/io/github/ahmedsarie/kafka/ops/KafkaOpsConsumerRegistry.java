@@ -1,7 +1,5 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import static java.util.Objects.isNull;
-
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -41,12 +39,12 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       var mainTopicName = consumer.getTopic().getName();
       var mainInfo = buildTopicInfo(mainTopicName);
 
-      if (consumer.getDltTopic() != null) {
-        var dltInfo = buildTopicInfo(consumer.getDltTopic().getName());
+      if (consumer.getTopic().getDltTopic() != null) {
+        var dltInfo = buildTopicInfo(consumer.getTopic().getDltTopic());
         mainInfo.setDlt(dltInfo);
       }
-      if (consumer.getRetryTopic() != null) {
-        var retryInfo = buildTopicInfo(consumer.getRetryTopic().getName());
+      if (consumer.getTopic().getRetryTopic() != null) {
+        var retryInfo = buildTopicInfo(consumer.getTopic().getRetryTopic());
         mainInfo.setRetry(retryInfo);
       }
 
@@ -97,8 +95,8 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
   @Override
   public void afterPropertiesSet() {
     beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class).values().forEach(consumer -> {
-      var consumerContainerName = consumer.getContainerName();
-      var consumerContainer = isNull(consumerContainerName) ? DEF_FACTORY_BEAN_NAME : consumerContainerName;
+      var containerConfig = consumer.getContainer();
+      var consumerContainer = containerConfig != null ? containerConfig.getName() : DEF_FACTORY_BEAN_NAME;
       var factory = (ConcurrentKafkaListenerContainerFactory) beanFactory.getBean(consumerContainer);
       var props = new HashMap<>(factory.getConsumerFactory().getConfigurationProperties());
       props.replace("group.id", groupId);
@@ -109,16 +107,16 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       var mainKafkaConsumer = consumerFactory.apply(props);
       registryMap.put(mainTopicName, Map.entry(consumer, mainKafkaConsumer));
 
-      if (consumer.getDltTopic() != null) {
+      if (consumer.getTopic().getDltTopic() != null) {
         var dltProps = new HashMap<>(props);
         var dltKafkaConsumer = consumerFactory.apply(dltProps);
-        registryMap.put(consumer.getDltTopic().getName(), Map.entry(consumer, dltKafkaConsumer));
+        registryMap.put(consumer.getTopic().getDltTopic(), Map.entry(consumer, dltKafkaConsumer));
       }
 
-      if (consumer.getRetryTopic() != null) {
+      if (consumer.getTopic().getRetryTopic() != null) {
         var retryProps = new HashMap<>(props);
         var retryKafkaConsumer = consumerFactory.apply(retryProps);
-        registryMap.put(consumer.getRetryTopic().getName(), Map.entry(consumer, retryKafkaConsumer));
+        registryMap.put(consumer.getTopic().getRetryTopic(), Map.entry(consumer, retryKafkaConsumer));
       }
     });
   }

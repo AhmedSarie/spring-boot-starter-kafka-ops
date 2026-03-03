@@ -83,17 +83,14 @@ public class OrderConsumer implements KafkaOpsAwareConsumer<String, OrderEvent> 
 
 ```java
 @Override
-public TopicConfig getDltTopic() {
-    return TopicConfig.of("orders.DLT");
-}
-
-@Override
-public TopicConfig getRetryTopic() {
-    return TopicConfig.of("orders-retry");
+public TopicConfig getTopic() {
+    return TopicConfig.of("orders")
+        .withDlt("orders.DLT")
+        .withRetry("orders-retry");
 }
 ```
 
-Declaring both `getDltTopic()` and `getRetryTopic()` enables DLT routing via the API: route messages from `orders.DLT` back to `orders-retry` for reprocessing.
+Declaring `withDlt()` and `withRetry()` enables DLT routing via the API: route messages from `orders.DLT` back to `orders-retry` for reprocessing.
 
 **Kotlin:**
 ```kotlin
@@ -232,12 +229,12 @@ public Schema getSchema() {
 
 ## Custom container factory
 
-If your consumer uses a custom `KafkaListenerContainerFactory`, override `getContainerName()` so the library resolves the correct deserializer configuration:
+If your consumer uses a custom `KafkaListenerContainerFactory`, override `getContainer()` so the library resolves the correct deserializer configuration:
 
 ```java
 @Override
-public String getContainerName() {
-    return "myCustomContainerFactory";
+public ContainerConfig getContainer() {
+    return ContainerConfig.of("myCustomContainerFactory");
 }
 ```
 

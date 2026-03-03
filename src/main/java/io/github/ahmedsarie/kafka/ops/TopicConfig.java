@@ -1,41 +1,31 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 
+@Getter
+@ToString
+@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class TopicConfig {
 
+  @EqualsAndHashCode.Include
   private final String name;
-
-  private TopicConfig(String name) {
-    this.name = name;
-  }
+  private final String dltTopic;
+  private final String retryTopic;
 
   public static TopicConfig of(String name) {
-    return new TopicConfig(name);
+    return new TopicConfig(name, null, null);
   }
 
-  public String getName() {
-    return name;
+  public TopicConfig withDlt(String dltTopic) {
+    return new TopicConfig(this.name, dltTopic, this.retryTopic);
   }
 
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-    return Objects.equals(name, ((TopicConfig) o).name);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(name);
-  }
-
-  @Override
-  public String toString() {
-    return "TopicConfig{name='" + name + "'}";
+  public TopicConfig withRetry(String retryTopic) {
+    return new TopicConfig(this.name, this.dltTopic, retryTopic);
   }
 }

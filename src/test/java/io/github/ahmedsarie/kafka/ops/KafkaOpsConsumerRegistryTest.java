@@ -125,9 +125,7 @@ class KafkaOpsConsumerRegistryTest {
   void shouldRegisterDltAndRetryTopics() {
     // prepare
     var consumer = mock(KafkaOpsAwareConsumer.class);
-    when(consumer.getTopic()).thenReturn(TopicConfig.of("main"));
-    when(consumer.getDltTopic()).thenReturn(TopicConfig.of("main.DLT"));
-    when(consumer.getRetryTopic()).thenReturn(TopicConfig.of("main-retry"));
+    when(consumer.getTopic()).thenReturn(TopicConfig.of("main").withDlt("main.DLT").withRetry("main-retry"));
 
     var registry = buildRegistry(Map.of("mainBean", consumer));
 
@@ -165,9 +163,7 @@ class KafkaOpsConsumerRegistryTest {
   void shouldIncludeDltAndRetryInConsumerDetails() {
     // prepare
     var consumer = mock(KafkaOpsAwareConsumer.class);
-    when(consumer.getTopic()).thenReturn(TopicConfig.of("orders"));
-    when(consumer.getDltTopic()).thenReturn(TopicConfig.of("orders.DLT"));
-    when(consumer.getRetryTopic()).thenReturn(TopicConfig.of("orders-retry"));
+    when(consumer.getTopic()).thenReturn(TopicConfig.of("orders").withDlt("orders.DLT").withRetry("orders-retry"));
 
     var registry = buildRegistry(Map.of("ordersBean", consumer));
     registry.afterPropertiesSet();

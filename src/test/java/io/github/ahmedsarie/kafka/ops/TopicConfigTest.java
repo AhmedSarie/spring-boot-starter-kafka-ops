@@ -2,6 +2,7 @@ package io.github.ahmedsarie.kafka.ops;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,12 +65,68 @@ class TopicConfigTest {
   }
 
   @Test
-  @DisplayName("toString contains the topic name")
-  void shouldIncludeNameInToString() {
+  @DisplayName("of() has null dltTopic and retryTopic by default")
+  void shouldHaveNullSubTopicsByDefault() {
     // when
-    var result = TopicConfig.of("orders").toString();
+    var config = TopicConfig.of("orders");
 
     // then
-    assertEquals("TopicConfig{name='orders'}", result);
+    assertNull(config.getDltTopic());
+    assertNull(config.getRetryTopic());
+  }
+
+  @Test
+  @DisplayName("withDlt() sets dltTopic and returns new instance")
+  void shouldSetDltTopic() {
+    // when
+    var config = TopicConfig.of("orders").withDlt("orders.DLT");
+
+    // then
+    assertEquals("orders.DLT", config.getDltTopic());
+    assertNull(config.getRetryTopic());
+  }
+
+  @Test
+  @DisplayName("withRetry() sets retryTopic and returns new instance")
+  void shouldSetRetryTopic() {
+    // when
+    var config = TopicConfig.of("orders").withRetry("orders-retry");
+
+    // then
+    assertNull(config.getDltTopic());
+    assertEquals("orders-retry", config.getRetryTopic());
+  }
+
+  @Test
+  @DisplayName("withDlt().withRetry() sets both sub-topics")
+  void shouldSetBothSubTopics() {
+    // when
+    var config = TopicConfig.of("orders").withDlt("orders.DLT").withRetry("orders-retry");
+
+    // then
+    assertEquals("orders.DLT", config.getDltTopic());
+    assertEquals("orders-retry", config.getRetryTopic());
+  }
+
+  @Test
+  @DisplayName("equals ignores dltTopic and retryTopic — name only")
+  void shouldEqualRegardlessOfSubTopics() {
+    // prepare
+    var plain = TopicConfig.of("orders");
+    var withSubs = TopicConfig.of("orders").withDlt("orders.DLT").withRetry("orders-retry");
+
+    // then
+    assertEquals(plain, withSubs);
+    assertEquals(plain.hashCode(), withSubs.hashCode());
+  }
+
+  @Test
+  @DisplayName("toString contains name, dltTopic, and retryTopic")
+  void shouldIncludeAllFieldsInToString() {
+    // when
+    var result = TopicConfig.of("orders").withDlt("orders.DLT").withRetry("orders-retry").toString();
+
+    // then
+    assertEquals("TopicConfig(name=orders, dltTopic=orders.DLT, retryTopic=orders-retry)", result);
   }
 }

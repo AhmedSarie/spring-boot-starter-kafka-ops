@@ -70,12 +70,15 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     for (var consumer : KafkaOpsFactoryUtils.getConsumerBeans(beanFactory)) {
       var mainTopicName = consumer.getTopic().getName();
 
-      if (consumer.getDltTopic() == null && consumer.getRetryTopic() == null) {
+      var dltTopicName = consumer.getTopic().getDltTopic();
+      var retryTopicName = consumer.getTopic().getRetryTopic();
+
+      if (dltTopicName == null && retryTopicName == null) {
         continue;
       }
-      if (consumer.getDltTopic() == null || consumer.getRetryTopic() == null) {
-        log.warn("Consumer for topic={} declares only {} — both getDltTopic() and getRetryTopic() required",
-            mainTopicName, consumer.getDltTopic() != null ? "DLT" : "retry");
+      if (dltTopicName == null || retryTopicName == null) {
+        log.warn("Consumer for topic={} declares only {} — both withDlt() and withRetry() required for DLT routing",
+            mainTopicName, dltTopicName != null ? "DLT" : "retry");
         continue;
       }
 
@@ -84,12 +87,10 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
       }
 
       var consumerFactory = createConsumerFactory(consumer, kafkaOpsProperties.getGroupId() + "-dlt-router");
-      var container = buildContainer(consumerFactory,
-          consumer.getDltTopic().getName(), consumer.getRetryTopic().getName(), mainTopicName, null);
+      var container = buildContainer(consumerFactory, dltTopicName, retryTopicName, mainTopicName, null);
 
-      routes.put(mainTopicName, new RouteState(container, consumer.getRetryTopic().getName(), consumer));
-      log.info("Registered DLT router: {} -> {} -> {}",
-          consumer.getDltTopic().getName(), consumer.getRetryTopic().getName(), mainTopicName);
+      routes.put(mainTopicName, new RouteState(container, retryTopicName, consumer));
+      log.info("Registered DLT router: {} -> {} -> {}", dltTopicName, retryTopicName, mainTopicName);
     }
   }
 
@@ -115,7 +116,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     var consumerFactory = createConsumerFactory(state.getConsumer(), groupId);
     var listener = buildTimestampSeekListener(mainTopic, timestamp);
     var newContainer = buildContainer(consumerFactory,
-        state.getConsumer().getDltTopic().getName(), state.getRetryTopic(), mainTopic, listener);
+        state.getConsumer().getTopic().getDltTopic(), state.getRetryTopic(), mainTopic, listener);
 
     state.setContainer(newContainer);
     state.setForce(force);
