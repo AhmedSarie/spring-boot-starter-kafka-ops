@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -27,6 +28,7 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
   private final Map<String, Map.Entry<KafkaOpsAwareConsumer, KafkaConsumer>> registryMap = new ConcurrentHashMap<>();
   private final ListableBeanFactory beanFactory;
   private final String groupId;
+  private final Function<Map<String, Object>, KafkaConsumer> consumerFactory;
 
   Set<String> getRegisteredTopics() {
     return Set.copyOf(registryMap.keySet());
@@ -104,18 +106,18 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       props.put("isolation.level", "read_uncommitted");
 
       var mainTopicName = consumer.getTopic().getName();
-      var mainKafkaConsumer = new KafkaConsumer<>(props);
+      var mainKafkaConsumer = consumerFactory.apply(props);
       registryMap.put(mainTopicName, Map.entry(consumer, mainKafkaConsumer));
 
       if (consumer.getDltTopic() != null) {
         var dltProps = new HashMap<>(props);
-        var dltKafkaConsumer = new KafkaConsumer<>(dltProps);
+        var dltKafkaConsumer = consumerFactory.apply(dltProps);
         registryMap.put(consumer.getDltTopic().getName(), Map.entry(consumer, dltKafkaConsumer));
       }
 
       if (consumer.getRetryTopic() != null) {
         var retryProps = new HashMap<>(props);
-        var retryKafkaConsumer = new KafkaConsumer<>(retryProps);
+        var retryKafkaConsumer = consumerFactory.apply(retryProps);
         registryMap.put(consumer.getRetryTopic().getName(), Map.entry(consumer, retryKafkaConsumer));
       }
     });

@@ -100,7 +100,7 @@ class KafkaOpsErrorHandlerConfiguration {
     return new FixedBackOff(retryConfig.getIntervalMs(), retryConfig.getMaxAttempts());
   }
 
-  private BiFunction<ConsumerRecord<?, ?>, Exception, TopicPartition> buildDestinationResolver(
+  BiFunction<ConsumerRecord<?, ?>, Exception, TopicPartition> buildDestinationResolver(
       Collection<KafkaOpsAwareConsumer> consumers) {
     var mainToRetry = new HashMap<String, String>();
     var retryToDlt = new HashMap<String, String>();

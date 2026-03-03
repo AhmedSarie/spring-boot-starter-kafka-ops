@@ -2,14 +2,22 @@ package io.github.ahmedsarie.kafka.ops;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
-import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,209 +26,309 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
-import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
+import org.springframework.kafka.core.KafkaTemplate;
 
 class KafkaOpsDltRouterTest {
 
-    private ListableBeanFactory beanFactory;
-    private KafkaOpsProperties properties;
+  private static final String RETRY_COUNT_HEADER = "kafka-ops-retry-count";
 
-    @BeforeEach
-    void setUp() {
-        beanFactory = mock(ListableBeanFactory.class);
-        properties = new KafkaOpsProperties(null, "test-ops-group", null, null,
-            new KafkaOpsProperties.DltRouting(true, 5, 30, 3));
-    }
+  private ListableBeanFactory beanFactory;
+  private KafkaOpsProperties properties;
+  private KafkaTemplate<byte[], byte[]> mockTemplate;
 
-    @Test
-    @DisplayName("Router creates container when consumer declares both DLT and retry topics")
-    void shouldCreateContainerWhenBothDltAndRetryDeclared() {
-        // prepare
-        var consumer = mock(KafkaOpsAwareConsumer.class);
-        when(consumer.getTopic()).thenReturn(TopicConfig.of("orders"));
-        when(consumer.getDltTopic()).thenReturn(TopicConfig.of("orders.DLT"));
-        when(consumer.getRetryTopic()).thenReturn(TopicConfig.of("orders-retry"));
+  @BeforeEach
+  void setUp() {
+    beanFactory = mock(ListableBeanFactory.class);
+    properties = new KafkaOpsProperties(null, "test-ops-group", null, null,
+        new KafkaOpsProperties.DltRouting(true, 5, 30, 3));
+    mockTemplate = mock(KafkaTemplate.class);
+  }
 
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of("ordersBean", consumer));
+  @Test
+  @DisplayName("Router creates container when consumer declares both DLT and retry topics")
+  void shouldCreateContainerWhenBothDltAndRetryDeclared() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
 
-        var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
-        when(beanFactory.getBean(anyString())).thenReturn(mockContainer);
-        var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
-        when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
-        when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+    // when
+    router.afterPropertiesSet();
 
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
+    // then — start should not throw (route exists)
+    router.start("orders");
+  }
 
-        // when
-        router.afterPropertiesSet();
+  @Test
+  @DisplayName("Router skips consumer that declares only DLT topic without retry topic")
+  void shouldSkipConsumerWithOnlyDlt() {
+    // prepare
+    var consumer = mock(KafkaOpsAwareConsumer.class);
+    when(consumer.getTopic()).thenReturn(TopicConfig.of("payments"));
+    when(consumer.getDltTopic()).thenReturn(TopicConfig.of("payments.DLT"));
+    when(consumer.getRetryTopic()).thenReturn(null);
 
-        // then
-        var containers = getRoutesField(router);
-        assertTrue(containers.containsKey("orders"));
-        assertEquals(1, containers.size());
-    }
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("paymentsBean", consumer));
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
 
-    @Test
-    @DisplayName("Router skips consumer that declares only DLT topic without retry topic")
-    void shouldSkipConsumerWithOnlyDlt() {
-        // prepare
-        var consumer = mock(KafkaOpsAwareConsumer.class);
-        when(consumer.getTopic()).thenReturn(TopicConfig.of("payments"));
-        when(consumer.getDltTopic()).thenReturn(TopicConfig.of("payments.DLT"));
-        when(consumer.getRetryTopic()).thenReturn(null);
+    // when
+    router.afterPropertiesSet();
 
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of("paymentsBean", consumer));
+    // then
+    assertThrows(NoConsumerFoundException.class, () -> router.start("payments"));
+  }
 
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
+  @Test
+  @DisplayName("Router skips consumer that declares only retry topic without DLT topic")
+  void shouldSkipConsumerWithOnlyRetry() {
+    // prepare
+    var consumer = mock(KafkaOpsAwareConsumer.class);
+    when(consumer.getTopic()).thenReturn(TopicConfig.of("notifications"));
+    when(consumer.getDltTopic()).thenReturn(null);
+    when(consumer.getRetryTopic()).thenReturn(TopicConfig.of("notifications-retry"));
 
-        // when
-        router.afterPropertiesSet();
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("notificationsBean", consumer));
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
 
-        // then
-        var containers = getRoutesField(router);
-        assertTrue(containers.isEmpty());
-    }
+    // when
+    router.afterPropertiesSet();
 
-    @Test
-    @DisplayName("Router skips consumer that declares only retry topic without DLT topic")
-    void shouldSkipConsumerWithOnlyRetry() {
-        // prepare
-        var consumer = mock(KafkaOpsAwareConsumer.class);
-        when(consumer.getTopic()).thenReturn(TopicConfig.of("notifications"));
-        when(consumer.getDltTopic()).thenReturn(null);
-        when(consumer.getRetryTopic()).thenReturn(TopicConfig.of("notifications-retry"));
+    // then
+    assertThrows(NoConsumerFoundException.class, () -> router.start("notifications"));
+  }
 
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of("notificationsBean", consumer));
+  @Test
+  @DisplayName("Router skips consumer with neither DLT nor retry topic")
+  void shouldSkipConsumerWithNeitherDltNorRetry() {
+    // prepare
+    var consumer = mock(KafkaOpsAwareConsumer.class);
+    when(consumer.getTopic()).thenReturn(TopicConfig.of("simple"));
+    when(consumer.getDltTopic()).thenReturn(null);
+    when(consumer.getRetryTopic()).thenReturn(null);
 
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("simpleBean", consumer));
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
 
-        // when
-        router.afterPropertiesSet();
+    // when
+    router.afterPropertiesSet();
 
-        // then
-        var containers = getRoutesField(router);
-        assertTrue(containers.isEmpty());
-    }
+    // then
+    assertThrows(NoConsumerFoundException.class, () -> router.start("simple"));
+  }
 
-    @Test
-    @DisplayName("Router skips consumer with neither DLT nor retry topic")
-    void shouldSkipConsumerWithNeitherDltNorRetry() {
-        // prepare
-        var consumer = mock(KafkaOpsAwareConsumer.class);
-        when(consumer.getTopic()).thenReturn(TopicConfig.of("simple"));
-        when(consumer.getDltTopic()).thenReturn(null);
-        when(consumer.getRetryTopic()).thenReturn(null);
+  @Test
+  @DisplayName("start throws NoConsumerFoundException when topic has no DLT router configured")
+  void shouldThrowWhenStartingUnknownTopic() {
+    // prepare
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(Map.of());
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    router.afterPropertiesSet();
 
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of("simpleBean", consumer));
+    // when + then
+    assertThrows(NoConsumerFoundException.class, () -> router.start("unknown-topic"));
+  }
 
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
+  @Test
+  @DisplayName("startFromTimestamp throws NoConsumerFoundException when topic has no DLT router configured")
+  void shouldThrowWhenStartFromTimestampUnknownTopic() {
+    // prepare
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(Map.of());
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    router.afterPropertiesSet();
 
-        // when
-        router.afterPropertiesSet();
+    // when + then
+    assertThrows(NoConsumerFoundException.class,
+        () -> router.startFromTimestamp("unknown-topic", 1000L, false));
+  }
 
-        // then
-        var containers = getRoutesField(router);
-        assertTrue(containers.isEmpty());
-    }
+  @Test
+  @DisplayName("destroy stops all containers and shuts down scheduler")
+  void shouldDestroyCleanly() {
+    // prepare
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(Map.of());
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    router.afterPropertiesSet();
 
-    @Test
-    @DisplayName("start throws NoConsumerFoundException when topic has no DLT router configured")
-    void shouldThrowWhenStartingUnknownTopic() {
-        // prepare
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of());
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
-        router.afterPropertiesSet();
+    // when + then (no exception)
+    router.destroy();
+  }
 
-        // when + then
-        assertThrows(NoConsumerFoundException.class, () -> router.start("unknown-topic"));
-    }
+  @Test
+  @DisplayName("Router registers multiple consumers that both have DLT and retry")
+  void shouldRegisterMultipleConsumers() {
+    // prepare
+    var consumer1 = mockConsumer("orders", "orders.DLT", "orders-retry");
+    var consumer2 = mockConsumer("payments", "payments.DLT", "payments-retry");
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("ordersBean", consumer1, "paymentsBean", consumer2));
+    mockContainerFactory();
 
-    @Test
-    @DisplayName("startFromTimestamp throws NoConsumerFoundException when topic has no DLT router configured")
-    void shouldThrowWhenStartFromTimestampUnknownTopic() {
-        // prepare
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of());
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
-        router.afterPropertiesSet();
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    router.setKafkaTemplate(mockTemplate);
 
-        // when + then
-        assertThrows(NoConsumerFoundException.class,
-            () -> router.startFromTimestamp("unknown-topic", 1000L, false));
-    }
+    // when
+    router.afterPropertiesSet();
 
-    @Test
-    @DisplayName("destroy stops all containers and shuts down scheduler")
-    void shouldDestroyCleanly() {
-        // prepare
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of());
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
-        router.afterPropertiesSet();
+    // then — both routes should exist (start does not throw)
+    router.start("orders");
+    router.start("payments");
+  }
 
-        // when + then (no exception)
-        router.destroy();
-    }
+  @Test
+  @DisplayName("routeRecord sends record to retry topic with incremented retry count")
+  @SuppressWarnings("unchecked")
+  void shouldRouteRecordToRetryTopicWithIncrementedRetryCount() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
 
-    @Test
-    @DisplayName("Router registers multiple consumers that both have DLT and retry")
-    void shouldRegisterMultipleConsumers() {
-        // prepare
-        var consumer1 = mock(KafkaOpsAwareConsumer.class);
-        when(consumer1.getTopic()).thenReturn(TopicConfig.of("orders"));
-        when(consumer1.getDltTopic()).thenReturn(TopicConfig.of("orders.DLT"));
-        when(consumer1.getRetryTopic()).thenReturn(TopicConfig.of("orders-retry"));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    var future = CompletableFuture.completedFuture(
+        new org.apache.kafka.clients.producer.RecordMetadata(
+            new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
+    when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
 
-        var consumer2 = mock(KafkaOpsAwareConsumer.class);
-        when(consumer2.getTopic()).thenReturn(TopicConfig.of("payments"));
-        when(consumer2.getDltTopic()).thenReturn(TopicConfig.of("payments.DLT"));
-        when(consumer2.getRetryTopic()).thenReturn(TopicConfig.of("payments-retry"));
+    // when
+    router.routeRecord(record, "orders-retry", "orders");
 
-        when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
-            .thenReturn(Map.of("ordersBean", consumer1, "paymentsBean", consumer2));
+    // then
+    verify(mockTemplate).send(any(ProducerRecord.class));
+    var retryHeader = record.headers().lastHeader(RETRY_COUNT_HEADER);
+    assertEquals("1", new String(retryHeader.value(), StandardCharsets.UTF_8));
+  }
 
-        var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
-        when(beanFactory.getBean(anyString())).thenReturn(mockContainer);
-        var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
-        when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
-        when(consumerFactoryMock.getConfigurationProperties()).thenReturn(testConsumerProp());
+  @Test
+  @DisplayName("routeRecord skips record when max retry count exceeded")
+  @SuppressWarnings("unchecked")
+  void shouldSkipRecordWhenMaxRetryCountExceeded() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
 
-        var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var headers = new RecordHeaders();
+    headers.add(RETRY_COUNT_HEADER, "3".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 0L, null, 0, 0,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
+        headers, java.util.Optional.empty());
 
-        // when
-        router.afterPropertiesSet();
+    // when
+    router.routeRecord(record, "orders-retry", "orders");
 
-        // then
-        var containers = getRoutesField(router);
-        assertEquals(2, containers.size());
-        assertTrue(containers.containsKey("orders"));
-        assertTrue(containers.containsKey("payments"));
-    }
+    // then
+    verify(mockTemplate, never()).send(any(ProducerRecord.class));
+  }
 
-    private Map<Object, Object> testConsumerProp() {
-        return Map.of(
-            "key.deserializer", IntegerDeserializer.class,
-            "value.deserializer", StringDeserializer.class,
-            "isolation.level", "read_uncommitted",
-            "group.id", "reconsumerId",
-            "bootstrap.servers", "127.0.0.1:50120",
-            "auto.offset.reset", "earliest"
-        );
-    }
+  @Test
+  @DisplayName("routeRecord resets retry count to 0 in force mode")
+  @SuppressWarnings("unchecked")
+  void shouldResetRetryCountInForceMode() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
 
-    @SuppressWarnings("unchecked")
-    private Map<String, ?> getRoutesField(KafkaOpsDltRouter router) {
-        try {
-            Field field = KafkaOpsDltRouter.class.getDeclaredField("routes");
-            field.setAccessible(true);
-            return (Map<String, ?>) field.get(router);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to access routes field", e);
-        }
-    }
+    var headers = new RecordHeaders();
+    headers.add(RETRY_COUNT_HEADER, "5".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 0L, null, 0, 0,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
+        headers, java.util.Optional.empty());
+
+    var future = CompletableFuture.completedFuture(
+        new RecordMetadata(new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
+    when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
+
+    // set force=true directly (bypasses broker connection)
+    router.setForceForTesting("orders", true);
+
+    // when
+    router.routeRecord(record, "orders-retry", "orders");
+
+    // then
+    verify(mockTemplate).send(any(ProducerRecord.class));
+    var retryHeader = record.headers().lastHeader(RETRY_COUNT_HEADER);
+    assertEquals("0", new String(retryHeader.value(), StandardCharsets.UTF_8));
+  }
+
+  @Test
+  @DisplayName("routeRecord throws RuntimeException when send fails")
+  @SuppressWarnings("unchecked")
+  void shouldThrowWhenSendFails() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
+
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    var failedFuture = new CompletableFuture<RecordMetadata>();
+    failedFuture.completeExceptionally(new RuntimeException("Kafka send failed"));
+    when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(failedFuture);
+
+    // when + then
+    assertThrows(RuntimeException.class,
+        () -> router.routeRecord(record, "orders-retry", "orders"));
+  }
+
+  @Test
+  @DisplayName("routeRecord increments existing retry count header")
+  @SuppressWarnings("unchecked")
+  void shouldIncrementExistingRetryCount() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
+
+    var headers = new RecordHeaders();
+    headers.add(RETRY_COUNT_HEADER, "2".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 0L, null, 0, 0,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
+        headers, java.util.Optional.empty());
+
+    var future = CompletableFuture.completedFuture(
+        new RecordMetadata(new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
+    when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
+
+    // when
+    router.routeRecord(record, "orders-retry", "orders");
+
+    // then
+    verify(mockTemplate).send(any(ProducerRecord.class));
+    var retryHeader = record.headers().lastHeader(RETRY_COUNT_HEADER);
+    assertEquals("3", new String(retryHeader.value(), StandardCharsets.UTF_8));
+  }
+
+  // --- Helpers ---
+
+  private KafkaOpsDltRouter buildRouterWithConsumer(String main, String dlt, String retry) {
+    var consumer = mockConsumer(main, dlt, retry);
+    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
+        .thenReturn(Map.of("bean", consumer));
+    mockContainerFactory();
+
+    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    router.setKafkaTemplate(mockTemplate);
+    return router;
+  }
+
+  private KafkaOpsAwareConsumer mockConsumer(String main, String dlt, String retry) {
+    var consumer = mock(KafkaOpsAwareConsumer.class);
+    when(consumer.getTopic()).thenReturn(TopicConfig.of(main));
+    when(consumer.getDltTopic()).thenReturn(TopicConfig.of(dlt));
+    when(consumer.getRetryTopic()).thenReturn(TopicConfig.of(retry));
+    return consumer;
+  }
+
+  @SuppressWarnings("unchecked")
+  private void mockContainerFactory() {
+    var mockContainer = mock(ConcurrentKafkaListenerContainerFactory.class);
+    when(beanFactory.getBean(anyString())).thenReturn(mockContainer);
+    var consumerFactoryMock = mock(DefaultKafkaConsumerFactory.class);
+    when(mockContainer.getConsumerFactory()).thenReturn(consumerFactoryMock);
+    when(consumerFactoryMock.getConfigurationProperties()).thenReturn(Map.of(
+        "key.deserializer", IntegerDeserializer.class,
+        "value.deserializer", StringDeserializer.class,
+        "isolation.level", "read_uncommitted",
+        "group.id", "reconsumerId",
+        "bootstrap.servers", "127.0.0.1:50120",
+        "auto.offset.reset", "earliest"));
+  }
 }

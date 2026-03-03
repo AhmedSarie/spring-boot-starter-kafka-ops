@@ -44,6 +44,17 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
   private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
   private KafkaTemplate<byte[], byte[]> kafkaTemplate;
 
+  void setKafkaTemplate(KafkaTemplate<byte[], byte[]> template) {
+    this.kafkaTemplate = template;
+  }
+
+  void setForceForTesting(String mainTopic, boolean force) {
+    var state = routes.get(mainTopic);
+    if (state != null) {
+      state.setForce(force);
+    }
+  }
+
   KafkaOpsDltRouter(ListableBeanFactory beanFactory, KafkaOpsProperties kafkaOpsProperties) {
     this.beanFactory = beanFactory;
     this.kafkaOpsProperties = kafkaOpsProperties;
@@ -205,7 +216,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
   // --- Record routing ---
 
-  private void routeRecord(ConsumerRecord<byte[], byte[]> record, String retryTopic, String mainTopic) {
+  void routeRecord(ConsumerRecord<byte[], byte[]> record, String retryTopic, String mainTopic) {
     var state = routes.get(mainTopic);
     var maxRetryCount = kafkaOpsProperties.getDltRouting().getMaxRetryCount();
     var currentRetryCount = readRetryCount(record);

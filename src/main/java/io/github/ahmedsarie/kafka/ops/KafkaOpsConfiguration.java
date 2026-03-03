@@ -3,6 +3,7 @@ package io.github.ahmedsarie.kafka.ops;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -34,7 +35,7 @@ public class KafkaOpsConfiguration {
     var groupId = ObjectUtils.isEmpty(kafkaOpsProperties.getGroupId())
         ? DEFAULT_GROUP_ID
         : kafkaOpsProperties.getGroupId();
-    return new KafkaOpsConsumerRegistry(listableBeanFactory, groupId);
+    return new KafkaOpsConsumerRegistry(listableBeanFactory, groupId, KafkaConsumer::new);
   }
 
   @Bean
