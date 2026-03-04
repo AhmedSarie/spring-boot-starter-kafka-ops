@@ -5,19 +5,24 @@ import static java.util.Spliterators.spliteratorUnknownSize;
 import static java.util.stream.StreamSupport.stream;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.common.TopicPartition;
 
 @Slf4j
 @RequiredArgsConstructor
 class ManualKafkaConsumer {
 
+  private static final Duration BATCH_POLL_TIMEOUT = Duration.ofMillis(200);
   private final Duration pollDuration;
 
   synchronized <T> Optional<ConsumerRecord<String, T>> poll(
@@ -28,6 +33,66 @@ class ManualKafkaConsumer {
   ) {
     assignAndSeek(kafkaConsumer, topic, partition, offset);
     return tryPolling(topic, partition, offset, kafkaConsumer);
+  }
+
+  synchronized <T> List<ConsumerRecord<String, T>> pollBatch(
+      String topic,
+      int partition,
+      long startOffset,
+      int limit,
+      KafkaConsumer<String, T> kafkaConsumer
+  ) {
+    assignAndSeek(kafkaConsumer, topic, partition, startOffset);
+    return pollMultiple(kafkaConsumer, limit);
+  }
+
+  synchronized <T> List<ConsumerRecord<String, T>> pollBatchByTimestamp(
+      String topic,
+      long startTimestamp,
+      int limit,
+      KafkaConsumer<String, T> kafkaConsumer
+  ) {
+    var partitionInfos = kafkaConsumer.partitionsFor(topic);
+    var topicPartitions = new ArrayList<TopicPartition>();
+    var timestampsToSearch = new HashMap<TopicPartition, Long>();
+    for (var info : partitionInfos) {
+      var tp = new TopicPartition(topic, info.partition());
+      topicPartitions.add(tp);
+      timestampsToSearch.put(tp, startTimestamp);
+    }
+
+    kafkaConsumer.assign(topicPartitions);
+
+    Map<TopicPartition, OffsetAndTimestamp> offsets = kafkaConsumer.offsetsForTimes(timestampsToSearch);
+    for (var entry : offsets.entrySet()) {
+      if (entry.getValue() != null) {
+        kafkaConsumer.seek(entry.getKey(), entry.getValue().offset());
+      } else {
+        var endOffsets = kafkaConsumer.endOffsets(List.of(entry.getKey()));
+        kafkaConsumer.seek(entry.getKey(), endOffsets.getOrDefault(entry.getKey(), 0L));
+      }
+    }
+
+    return pollMultiple(kafkaConsumer, limit);
+  }
+
+  private <T> List<ConsumerRecord<String, T>> pollMultiple(
+      KafkaConsumer<String, T> kafkaConsumer, int limit
+  ) {
+    var result = new ArrayList<ConsumerRecord<String, T>>();
+    while (result.size() < limit) {
+      var records = kafkaConsumer.poll(BATCH_POLL_TIMEOUT);
+      if (records.isEmpty()) {
+        break;
+      }
+      for (var record : records) {
+        result.add(record);
+        if (result.size() >= limit) {
+          break;
+        }
+      }
+    }
+    return result;
   }
 
   private <T> Optional<ConsumerRecord<String, T>> tryPolling(

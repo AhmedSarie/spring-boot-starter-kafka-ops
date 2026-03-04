@@ -5,6 +5,7 @@ import static java.lang.String.format;
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
 import jakarta.validation.Valid;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,12 +29,13 @@ import org.springframework.web.bind.annotation.RestController;
 class KafkaOpsController {
 
   private final KafkaOpsService kafkaOpsService;
+  private final Optional<KafkaOpsDltRouter> dltRouter;
 
   @GetMapping("/consumers")
   public ResponseEntity<?> getConsumers() {
     try {
       log.info("Listing registered consumers");
-      return ResponseEntity.ok(kafkaOpsService.getRegisteredTopics());
+      return ResponseEntity.ok(kafkaOpsService.getConsumerDetails());
     } catch (Exception e) {
       log.error("Failed to list consumers", e);
       return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
@@ -69,7 +71,7 @@ class KafkaOpsController {
   ) {
     try {
       log.info(format("Polling started for topic=%s - partition=%d - offset=%d", topicName, partition, offset));
-      return ResponseEntity.ok(new KafkaPollResponse(kafkaOpsService.poll(topicName, partition, offset)));
+      return ResponseEntity.ok(kafkaOpsService.poll(topicName, partition, offset));
     } catch (NoConsumerFoundException e) {
       log.error("Poll failed. consumer not found for topic ", e);
       return errorResponse(HttpStatus.NOT_FOUND, e);
@@ -78,6 +80,36 @@ class KafkaOpsController {
       return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
     } finally {
       log.info("Poll finished");
+      MDC.clear();
+    }
+  }
+
+  @GetMapping("/batch")
+  public ResponseEntity<?> batchPoll(
+      @RequestParam String topicName,
+      @RequestParam(required = false) Integer partition,
+      @RequestParam(required = false) Long startOffset,
+      @RequestParam(required = false) Long startTimestamp,
+      @RequestParam(defaultValue = "10") int limit
+  ) {
+    try {
+      log.info(format("Batch poll started for topic=%s", topicName));
+      var hasTimestamp = startTimestamp != null;
+      var hasOffset = partition != null && startOffset != null;
+      if (hasTimestamp == hasOffset) {
+        return ResponseEntity.badRequest().body(
+            Map.of("message", "Provide either partition+startOffset or startTimestamp, not both"));
+      }
+      var result = kafkaOpsService.batchPoll(topicName, partition, startOffset, startTimestamp, limit);
+      return ResponseEntity.ok(result);
+    } catch (NoConsumerFoundException e) {
+      log.error("Batch poll failed. consumer not found for topic ", e);
+      return errorResponse(HttpStatus.NOT_FOUND, e);
+    } catch (Exception e) {
+      log.error("Batch poll failed ", e);
+      return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
+    } finally {
+      log.info("Batch poll finished");
       MDC.clear();
     }
   }
@@ -98,6 +130,34 @@ class KafkaOpsController {
       return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
     } finally {
       log.info("Correction finished");
+      MDC.clear();
+    }
+  }
+
+  @PostMapping("/dlt-routing/{topic}/start")
+  public ResponseEntity<?> startDltRouting(@PathVariable("topic") String topic) {
+    try {
+      var id = UUID.randomUUID().toString();
+      MDC.put("api-response-id", id);
+
+      if (dltRouter.isEmpty()) {
+        log.error(format("DLT routing not configured — enable via kafka.ops.dlt-routing.enabled=true"));
+        return errorResponse(HttpStatus.NOT_FOUND,
+            new NoConsumerFoundException("DLT routing is not enabled. Set kafka.ops.dlt-routing.enabled=true"));
+      }
+
+      log.info(format("DLT routing start for topic=%s", topic));
+      dltRouter.get().start(topic);
+
+      return ResponseEntity.ok(new KafkaOpsResponse(id));
+    } catch (NoConsumerFoundException e) {
+      log.error("DLT routing failed. consumer not found for topic ", e);
+      return errorResponse(HttpStatus.NOT_FOUND, e);
+    } catch (Exception e) {
+      log.error("DLT routing failed ", e);
+      return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, e);
+    } finally {
+      log.info("DLT routing request finished");
       MDC.clear();
     }
   }

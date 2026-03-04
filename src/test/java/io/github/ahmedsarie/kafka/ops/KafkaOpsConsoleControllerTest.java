@@ -79,6 +79,27 @@ class KafkaOpsConsoleControllerTest {
 
   @Test
   @SneakyThrows
+  @DisplayName("should return DLT routing config when enabled")
+  void shouldReturnDltRoutingConfig() {
+
+    // prepare
+    var restApi = new KafkaOpsProperties.RestApi(true, "custom/path");
+    var dltRouting = new KafkaOpsProperties.DltRouting(true, 10, "0 */30 * * * *", 5);
+    when(properties.getRestApi()).thenReturn(restApi);
+    when(properties.getDltRouting()).thenReturn(dltRouting);
+
+    // when
+    this.mockMvc.perform(get(CONSOLE_API_URI + "/config"))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.dltRouting.enabled").value(true))
+        .andExpect(jsonPath("$.dltRouting.restartCron").value("0 */30 * * * *"))
+        .andExpect(jsonPath("$.dltRouting.maxCycles").value(5))
+        .andExpect(jsonPath("$.dltRouting.idleShutdownSeconds").value(10));
+  }
+
+  @Test
+  @SneakyThrows
   @DisplayName("should return 500 when config endpoint throws")
   void shouldReturn500WhenConfigEndpointThrows() {
 

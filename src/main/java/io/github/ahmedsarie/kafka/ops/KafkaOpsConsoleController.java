@@ -1,5 +1,6 @@
 package io.github.ahmedsarie.kafka.ops;
 
+import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +28,20 @@ class KafkaOpsConsoleController {
       var url = restApi != null && restApi.getRetryEndpointUrl() != null
           ? restApi.getRetryEndpointUrl()
           : DEFAULT_RETRY_ENDPOINT_URL;
-      return ResponseEntity.ok(Map.of("retryEndpointUrl", url));
+      var config = new HashMap<String, Object>();
+      config.put("retryEndpointUrl", url);
+
+      var dltRouting = kafkaOpsProperties.getDltRouting();
+      if (dltRouting != null) {
+        config.put("dltRouting", Map.of(
+            "enabled", dltRouting.isEnabled(),
+            "restartCron", dltRouting.getRestartCron(),
+            "maxCycles", dltRouting.getMaxCycles(),
+            "idleShutdownSeconds", dltRouting.getIdleShutdownSeconds()
+        ));
+      }
+
+      return ResponseEntity.ok(config);
     } catch (Exception e) {
       log.error("Console: failed to return configuration", e);
       var message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();

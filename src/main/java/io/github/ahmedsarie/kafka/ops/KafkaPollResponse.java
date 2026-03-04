@@ -1,5 +1,6 @@
 package io.github.ahmedsarie.kafka.ops;
 
+import java.util.Map;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
@@ -8,4 +9,9 @@ import lombok.RequiredArgsConstructor;
 public class KafkaPollResponse {
 
   private final String consumerRecordValue;
+  private final String key;
+  private final int partition;
+  private final long offset;
+  private final long timestamp;
+  private final Map<String, String> headers;
 }

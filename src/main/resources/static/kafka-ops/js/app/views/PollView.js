@@ -1,23 +1,34 @@
-/* Poll view — poll form + history + JSON result + retry/correct actions */
+/* Poll view — poll form + history + enriched JSON result + retry/correct actions */
 var PollView = (function () {
     var state = {
         topic: '',
         partition: 0,
         offset: 0,
-        message: null,
+        message: null,       /* raw consumerRecordValue string */
+        pollResponse: null,  /* full enriched response object */
         polling: false,
         retrying: false,
         showEditor: false,
         correctionValue: '',
         sending: false,
         jsonError: false,
-        showDiffModal: false
+        showDiffModal: false,
+        headersExpanded: false
     };
 
     var anyBusy = function () { return state.polling || state.retrying || state.sending; };
 
     function getHistory() {
         return state.topic ? PollHistory.get(state.topic) : [];
+    }
+
+    function formatTimestamp(ts) {
+        if (!ts) return '';
+        try {
+            return new Date(ts).toISOString().replace('T', ' ').replace('Z', ' UTC');
+        } catch (e) {
+            return String(ts);
+        }
     }
 
     function pollMessage() {
@@ -27,11 +38,17 @@ var PollView = (function () {
 
         state.polling = true;
         state.message = null;
+        state.pollResponse = null;
         state.showEditor = false;
+        state.headersExpanded = false;
 
         Api.poll(state.topic, state.partition, state.offset).then(function (data) {
+            state.pollResponse = data;
             state.message = data.consumerRecordValue;
             if (state.message) {
+                /* Use response partition/offset if available */
+                if (data.partition !== undefined) state.partition = data.partition;
+                if (data.offset !== undefined) state.offset = data.offset;
                 PollHistory.add(state.topic, state.partition, state.offset);
                 Toast.success('Message polled successfully');
             } else {
@@ -112,6 +129,7 @@ var PollView = (function () {
         state.partition = 0;
         state.offset = 0;
         state.message = null;
+        state.pollResponse = null;
         state.polling = false;
         state.retrying = false;
         state.showEditor = false;
@@ -124,6 +142,49 @@ var PollView = (function () {
     function selectHistory(entry) {
         state.partition = entry.partition;
         state.offset = entry.offset;
+    }
+
+    function renderMetadataBadges() {
+        var resp = state.pollResponse;
+        if (!resp) return null;
+
+        var badges = [];
+        if (resp.partition !== undefined) {
+            badges.push(m('span.meta-badge', { key: 'p' }, 'P' + resp.partition));
+        }
+        if (resp.offset !== undefined) {
+            badges.push(m('span.meta-badge', { key: 'o' }, 'O' + resp.offset));
+        }
+        if (resp.timestamp) {
+            badges.push(m('span.meta-badge', { key: 'ts' }, formatTimestamp(resp.timestamp)));
+        }
+        if (resp.key) {
+            badges.push(m('span.meta-badge.meta-badge-key', { key: 'k', title: resp.key },
+                'Key: ' + (resp.key.length > 30 ? resp.key.slice(0, 30) + '...' : resp.key)));
+        }
+        return badges.length > 0 ? m('.result-metadata', badges) : null;
+    }
+
+    function renderHeaders() {
+        var resp = state.pollResponse;
+        if (!resp || !resp.headers) return null;
+        var keys = Object.keys(resp.headers);
+        if (keys.length === 0) return null;
+
+        return m('.result-headers', [
+            m('span.result-label.headers-toggle', {
+                onclick: function () { state.headersExpanded = !state.headersExpanded; },
+                style: 'cursor:pointer'
+            }, 'Headers (' + keys.length + ') ' + (state.headersExpanded ? '\u25BC' : '\u25B6')),
+            state.headersExpanded
+                ? m('.headers-grid', keys.map(function (k) {
+                    return m('.header-entry', { key: k }, [
+                        m('span.header-key', k),
+                        m('span.header-val', resp.headers[k])
+                    ]);
+                }))
+                : null
+        ]);
     }
 
     return {
@@ -142,10 +203,22 @@ var PollView = (function () {
 
             var history = getHistory();
 
+            var topicInfo = state.topic ? AppState.findTopicInfo(state.topic) : null;
+
             return m(Layout, [
-                // Topic heading
+                // Topic heading with metadata
                 state.topic
-                    ? m('.poll-topic-heading', state.topic)
+                    ? m('.poll-topic-heading', [
+                        state.topic,
+                        topicInfo ? m('.topic-meta-badges', [
+                            topicInfo.partitions !== undefined
+                                ? m('span.meta-badge', topicInfo.partitions + ' partition' + (topicInfo.partitions !== 1 ? 's' : ''))
+                                : null,
+                            topicInfo.messageCount !== undefined
+                                ? m('span.meta-badge', AppState.formatCount(topicInfo.messageCount) + ' messages')
+                                : null
+                        ]) : null
+                    ])
                     : null,
 
                 // Poll form (2-column: partition + offset)
@@ -203,6 +276,13 @@ var PollView = (function () {
                         m('span.result-label', 'Consumer Record Value'),
                         m('span.result-meta', 'P' + state.partition + ' / O' + state.offset)
                     ]),
+
+                    /* Enriched metadata badges */
+                    renderMetadataBadges(),
+
+                    /* Headers */
+                    renderHeaders(),
+
                     m(JsonViewer, { data: state.message }),
                     m('.action-buttons', [
                         m('button.btn.btn-secondary[type=button]', {
