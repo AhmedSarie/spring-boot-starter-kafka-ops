@@ -18,7 +18,8 @@ var BrowseView = (function () {
         correctionValue: '',
         sending: false,
         jsonError: false,
-        showDiffModal: false
+        showDiffModal: false,
+        headersExpanded: false
     };
 
     var anyBusy = function () { return state.loading || state.retrying || state.sending; };
@@ -42,6 +43,15 @@ var BrowseView = (function () {
         if (!dtStr) return null;
         var d = new Date(dtStr);
         return isNaN(d.getTime()) ? null : d.getTime();
+    }
+
+    function getBrowseHistory() {
+        return state.topic ? PollHistory.get(state.topic + ':browse') : [];
+    }
+
+    function selectBrowseHistory(entry) {
+        state.partition = entry.partition;
+        state.startOffset = entry.offset;
     }
 
     function buildParams(append) {
@@ -93,6 +103,9 @@ var BrowseView = (function () {
                 Toast.error('No messages found');
             } else {
                 Toast.success(data.records.length + ' message' + (data.records.length !== 1 ? 's' : '') + ' loaded');
+                if (!append && state.mode === 'offset') {
+                    PollHistory.add(state.topic + ':browse', state.partition, state.startOffset);
+                }
             }
         }).catch(function (e) {
             Toast.error('Batch poll failed: ' + Api.extractError(e));
@@ -122,6 +135,7 @@ var BrowseView = (function () {
             state.expandedIndex = index;
             state.showEditor = false;
             state.jsonError = false;
+            state.headersExpanded = false;
         }
     }
 
@@ -188,10 +202,17 @@ var BrowseView = (function () {
         state.showDiffModal = false;
     }
 
+    function defaultTimestamp() {
+        var d = new Date(Date.now() - 3600000);
+        var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+            'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    }
+
     function resetState(topic) {
         state.topic = topic;
         state.mode = 'timestamp';
-        state.startTimestamp = '';
+        state.startTimestamp = defaultTimestamp();
         state.partition = 0;
         state.startOffset = 0;
         state.limit = 20;
@@ -227,10 +248,22 @@ var BrowseView = (function () {
                 ? filteredRecords[state.expandedIndex]
                 : null;
 
+            var topicInfo = state.topic ? AppState.findTopicInfo(state.topic) : null;
+
             return m(Layout, { wide: true }, [
-                // Topic heading
+                // Topic heading with metadata
                 state.topic
-                    ? m('.poll-topic-heading', state.topic)
+                    ? m('.poll-topic-heading', [
+                        state.topic,
+                        topicInfo ? m('.topic-meta-badges', [
+                            topicInfo.partitions !== undefined
+                                ? m('span.meta-badge', topicInfo.partitions + ' partition' + (topicInfo.partitions !== 1 ? 's' : ''))
+                                : null,
+                            topicInfo.messageCount !== undefined
+                                ? m('span.meta-badge', AppState.formatCount(topicInfo.messageCount) + ' messages')
+                                : null
+                        ]) : null
+                    ])
                     : null,
 
                 // Browse form
@@ -304,7 +337,20 @@ var BrowseView = (function () {
                                     oninput: function (e) { state.limit = Number(e.target.value) || 20; },
                                     onkeydown: function (e) { if (e.key === 'Enter') fetchRecords(false); }
                                 })
-                            ])
+                            ]),
+                            (function () {
+                                var history = getBrowseHistory();
+                                return history.length > 0 ? m('.poll-history', [
+                                    m('span.poll-history-label', 'Recent'),
+                                    m('.poll-history-list', history.map(function (entry) {
+                                        var isActive = entry.partition === state.partition && entry.offset === state.startOffset;
+                                        return m('button.poll-history-item' + (isActive ? '.active' : '') + '[type=button]', {
+                                            key: entry.partition + ':' + entry.offset,
+                                            onclick: function () { selectBrowseHistory(entry); }
+                                        }, 'P' + entry.partition + ' / O' + entry.offset);
+                                    }))
+                                ]) : null;
+                            })()
                         ]),
 
                     m('button.btn.btn-primary.btn-full[type=button]', {
@@ -376,16 +422,24 @@ var BrowseView = (function () {
                                                     'Key: ' + truncate(record.key, 30)) : null
                                             ]),
 
-                                            /* Headers */
+                                            /* Headers (collapsible) */
                                             record.headers && Object.keys(record.headers).length > 0
                                                 ? m('.result-headers', [
-                                                    m('span.result-label', 'Headers'),
-                                                    m('.headers-grid', Object.keys(record.headers).map(function (k) {
-                                                        return m('.header-entry', { key: k }, [
-                                                            m('span.header-key', k),
-                                                            m('span.header-val', record.headers[k])
-                                                        ]);
-                                                    }))
+                                                    m('span.result-label.headers-toggle', {
+                                                        onclick: function (e) {
+                                                            e.stopPropagation();
+                                                            state.headersExpanded = !state.headersExpanded;
+                                                        },
+                                                        style: 'cursor:pointer'
+                                                    }, 'Headers (' + Object.keys(record.headers).length + ') ' + (state.headersExpanded ? '\u25BC' : '\u25B6')),
+                                                    state.headersExpanded
+                                                        ? m('.headers-grid', Object.keys(record.headers).map(function (k) {
+                                                            return m('.header-entry', { key: k }, [
+                                                                m('span.header-key', k),
+                                                                m('span.header-val', record.headers[k])
+                                                            ]);
+                                                        }))
+                                                        : null
                                                 ])
                                                 : null,
 

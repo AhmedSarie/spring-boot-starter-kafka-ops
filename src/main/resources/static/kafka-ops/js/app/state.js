@@ -3,6 +3,7 @@ var AppState = {
     consumers: [],          /* Array of KafkaOpsConsumerInfo objects */
     consumersLoading: true,
     selectedTopic: '',
+    dltRouting: null,       /* DLT routing config from /kafka-ops/api/config */
 
     /* Find the consumer info object for a given topic name (main, DLT, or retry) */
     findConsumer: function (topicName) {
@@ -13,6 +14,25 @@ var AppState = {
             if (c.retry && c.retry.name === topicName) return c;
         }
         return null;
+    },
+
+    /* Find the topic info (partitions, messageCount) for any topic name (main, DLT, or retry) */
+    findTopicInfo: function (topicName) {
+        for (var i = 0; i < this.consumers.length; i++) {
+            var c = this.consumers[i];
+            if (c.name === topicName) return { partitions: c.partitions, messageCount: c.messageCount };
+            if (c.dlt && c.dlt.name === topicName) return { partitions: c.dlt.partitions, messageCount: c.dlt.messageCount };
+            if (c.retry && c.retry.name === topicName) return { partitions: c.retry.partitions, messageCount: c.retry.messageCount };
+        }
+        return null;
+    },
+
+    /* Format a message count for display (e.g. 1500 → "1.5K") */
+    formatCount: function (count) {
+        if (count === undefined || count === null) return '';
+        if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
+        if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
+        return String(count);
     },
 
     /* Find the main topic name for a given topic (DLT or retry resolves to parent) */

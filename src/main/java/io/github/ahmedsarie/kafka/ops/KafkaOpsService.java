@@ -5,6 +5,7 @@ import static io.github.ahmedsarie.kafka.ops.AvroUtil.jsonToAvro;
 import static java.lang.String.format;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +20,12 @@ import org.apache.kafka.common.header.Header;
 
 @Slf4j
 public class KafkaOpsService {
+
+  private static final String DLT_STACKTRACE_HEADER = "kafka_dlt-exception-stacktrace";
+  private static final Set<String> BIG_ENDIAN_LONG_HEADERS = Set.of(
+      "kafka_dlt-original-offset", "kafka_dlt-original-timestamp");
+  private static final Set<String> BIG_ENDIAN_INT_HEADERS = Set.of(
+      "kafka_dlt-original-partition");
 
   private final KafkaOpsConsumerRegistry registry;
   private final ManualKafkaConsumer manualKafkaConsumer;
@@ -125,9 +132,19 @@ public class KafkaOpsService {
   private Map<String, String> extractHeaders(ConsumerRecord<String, ?> consumerRecord) {
     var headers = new HashMap<String, String>();
     for (Header header : consumerRecord.headers()) {
-      var value = header.value() != null
-          ? new String(header.value(), StandardCharsets.UTF_8)
-          : null;
+      if (DLT_STACKTRACE_HEADER.equals(header.key())) {
+        continue;
+      }
+      String value;
+      if (header.value() == null) {
+        value = null;
+      } else if (BIG_ENDIAN_LONG_HEADERS.contains(header.key()) && header.value().length == 8) {
+        value = String.valueOf(ByteBuffer.wrap(header.value()).getLong());
+      } else if (BIG_ENDIAN_INT_HEADERS.contains(header.key()) && header.value().length == 4) {
+        value = String.valueOf(ByteBuffer.wrap(header.value()).getInt());
+      } else {
+        value = new String(header.value(), StandardCharsets.UTF_8);
+      }
       headers.put(header.key(), value);
     }
     return headers;

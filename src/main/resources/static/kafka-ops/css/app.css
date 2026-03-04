@@ -133,6 +133,23 @@
     margin: 0;
 }
 
+.dlt-config-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    margin-top: 0.5rem;
+    font-size: 0.625rem;
+    color: var(--pico-muted-color);
+}
+.dlt-config-label {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+.dlt-config-item {
+    font-family: var(--kops-font-mono);
+}
+
 .sidebar-loading {
     display: flex;
     justify-content: center;
@@ -191,6 +208,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.topic-meta-badges {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
 }
 
 /* --- Form Grid --- */

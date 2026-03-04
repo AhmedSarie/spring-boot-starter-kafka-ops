@@ -30,13 +30,6 @@ var Sidebar = {
             m.route.set(routePrefix, { topic: name });
         }
 
-        function formatCount(count) {
-            if (count === undefined || count === null) return '';
-            if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
-            if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
-            return String(count);
-        }
-
         function renderTopicItem(name, count, isActive, indent, extraContent) {
             return m('.consumer-item' + (isActive ? '.active' : ''), {
                 key: name,
@@ -54,12 +47,7 @@ var Sidebar = {
                 }
             }, [
                 m('.status-dot'),
-                m('.consumer-item-label', [
-                    name,
-                    (count !== undefined && count !== null)
-                        ? m('span.consumer-count', ' (' + formatCount(count) + ')')
-                        : null
-                ]),
+                m('.consumer-item-label', name),
                 extraContent || null
             ]);
         }
@@ -80,12 +68,7 @@ var Sidebar = {
                         e.stopPropagation();
                         selectTopic(dlt.name);
                     }
-                }, [
-                    dlt.name,
-                    (dlt.messageCount !== undefined && dlt.messageCount !== null)
-                        ? m('span.consumer-count', ' (' + formatCount(dlt.messageCount) + ')')
-                        : null
-                ]),
+                }, dlt.name),
                 m('button.btn.btn-sm.btn-drain-dlt[type=button]', {
                     title: 'Drain DLT — reprocess all messages',
                     onclick: function (e) {
@@ -199,9 +182,17 @@ var Sidebar = {
                                 return renderConsumerTree(consumer);
                             })
             ),
-            Api.disabled ? null : m('.sidebar-footer',
-                m('p', AppState.consumers.length + ' registered consumer' + (AppState.consumers.length !== 1 ? 's' : ''))
-            )
+            Api.disabled ? null : m('.sidebar-footer', [
+                m('p', AppState.consumers.length + ' registered consumer' + (AppState.consumers.length !== 1 ? 's' : '')),
+                AppState.dltRouting && AppState.dltRouting.enabled
+                    ? m('.dlt-config-info', [
+                        m('span.dlt-config-label', 'DLT routing'),
+                        m('span.dlt-config-item', 'Cron: ' + AppState.dltRouting.restartCron),
+                        m('span.dlt-config-item', 'Max cycles: ' + AppState.dltRouting.maxCycles),
+                        m('span.dlt-config-item', 'Idle stop: ' + AppState.dltRouting.idleShutdownSeconds + 's')
+                    ])
+                    : null
+            ])
         ]);
     }
 };

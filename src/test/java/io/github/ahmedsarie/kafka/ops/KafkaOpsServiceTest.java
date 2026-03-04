@@ -18,6 +18,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.ahmedsarie.kafka.ops.avro.TestRecord;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -275,6 +276,67 @@ class KafkaOpsServiceTest {
     // then
     assertNotNull(result);
     verify(manualKafkaConsumerMock).pollBatch(eq(topic), eq(0), eq(0L), eq(50), any());
+  }
+
+  @Test
+  @DisplayName("extractHeaders should filter out kafka_dlt-exception-stacktrace header")
+  void shouldFilterOutDltStacktraceHeader() {
+    // prepare
+    when(registry.find(topic)).thenReturn(entry);
+    var headers = new RecordHeaders();
+    headers.add("traceid", "abc".getBytes(StandardCharsets.UTF_8));
+    headers.add("kafka_dlt-exception-stacktrace", "java.lang.RuntimeException: boom\n\tat ...".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>(topic, 0, 0L, ConsumerRecord.NO_TIMESTAMP,
+        null, 0, 0, "key", (Object) "value", headers, Optional.empty());
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(record));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertNotNull(poll);
+    assertEquals("abc", poll.getHeaders().get("traceid"));
+    assertNull(poll.getHeaders().get("kafka_dlt-exception-stacktrace"));
+  }
+
+  @Test
+  @DisplayName("extractHeaders should decode BigEndian long headers (offset, timestamp)")
+  void shouldDecodeBigEndianLongHeaders() {
+    // prepare
+    when(registry.find(topic)).thenReturn(entry);
+    var headers = new RecordHeaders();
+    headers.add("kafka_dlt-original-offset", ByteBuffer.allocate(8).putLong(42L).array());
+    headers.add("kafka_dlt-original-timestamp", ByteBuffer.allocate(8).putLong(1700000000000L).array());
+    var record = new ConsumerRecord<>(topic, 0, 0L, ConsumerRecord.NO_TIMESTAMP,
+        null, 0, 0, "key", (Object) "value", headers, Optional.empty());
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(record));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertNotNull(poll);
+    assertEquals("42", poll.getHeaders().get("kafka_dlt-original-offset"));
+    assertEquals("1700000000000", poll.getHeaders().get("kafka_dlt-original-timestamp"));
+  }
+
+  @Test
+  @DisplayName("extractHeaders should decode BigEndian int header (partition)")
+  void shouldDecodeBigEndianIntHeader() {
+    // prepare
+    when(registry.find(topic)).thenReturn(entry);
+    var headers = new RecordHeaders();
+    headers.add("kafka_dlt-original-partition", ByteBuffer.allocate(4).putInt(3).array());
+    var record = new ConsumerRecord<>(topic, 0, 0L, ConsumerRecord.NO_TIMESTAMP,
+        null, 0, 0, "key", (Object) "value", headers, Optional.empty());
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(record));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertNotNull(poll);
+    assertEquals("3", poll.getHeaders().get("kafka_dlt-original-partition"));
   }
 
   private static Stream<Arguments> messages() {

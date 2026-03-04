@@ -36,7 +36,7 @@ public class KafkaOpsPropertiesTest {
     assertEquals(maxPollIntervalMs, properties.getMaxPollIntervalMs());
     assertEquals(50, properties.getBatch().getMaxLimit());
     assertEquals(true, properties.getDltRouting().isEnabled());
-    assertEquals(10, properties.getDltRouting().getIdleShutdownMinutes());
+    assertEquals(10, properties.getDltRouting().getIdleShutdownSeconds());
     assertEquals("0 0 22 * * *", properties.getDltRouting().getRestartCron());
     assertEquals(5, properties.getDltRouting().getMaxCycles());
   }
@@ -85,7 +85,7 @@ public class KafkaOpsPropertiesTest {
     // then
     assertNotNull(properties.getDltRouting());
     assertFalse(properties.getDltRouting().isEnabled());
-    assertEquals(5, properties.getDltRouting().getIdleShutdownMinutes());
+    assertEquals(10, properties.getDltRouting().getIdleShutdownSeconds());
     assertEquals("0 */30 * * * *", properties.getDltRouting().getRestartCron());
     assertEquals(10, properties.getDltRouting().getMaxCycles());
   }
@@ -101,7 +101,7 @@ public class KafkaOpsPropertiesTest {
 
     // then
     assertEquals(true, properties.getDltRouting().isEnabled());
-    assertEquals(15, properties.getDltRouting().getIdleShutdownMinutes());
+    assertEquals(15, properties.getDltRouting().getIdleShutdownSeconds());
     assertEquals("0 0 0 * * SAT,SUN", properties.getDltRouting().getRestartCron());
     assertEquals(20, properties.getDltRouting().getMaxCycles());
   }

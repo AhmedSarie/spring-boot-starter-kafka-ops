@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -37,13 +38,15 @@ class KafkaOpsDltRouterTest {
   private ListableBeanFactory beanFactory;
   private KafkaOpsProperties properties;
   private KafkaTemplate<byte[], byte[]> mockTemplate;
+  private ApplicationEventPublisher eventPublisher;
 
   @BeforeEach
   void setUp() {
     beanFactory = mock(ListableBeanFactory.class);
     properties = new KafkaOpsProperties(null, "test-ops-group", null, null,
-        new KafkaOpsProperties.DltRouting(true, 5, "0 */30 * * * *", 10));
+        new KafkaOpsProperties.DltRouting(true, 10, "0 */30 * * * *", 10));
     mockTemplate = mock(KafkaTemplate.class);
+    eventPublisher = mock(ApplicationEventPublisher.class);
   }
 
   @Test
@@ -68,7 +71,7 @@ class KafkaOpsDltRouterTest {
 
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
         .thenReturn(Map.of("paymentsBean", consumer));
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
 
     // when
     router.afterPropertiesSet();
@@ -86,7 +89,7 @@ class KafkaOpsDltRouterTest {
 
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
         .thenReturn(Map.of("notificationsBean", consumer));
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
 
     // when
     router.afterPropertiesSet();
@@ -104,7 +107,7 @@ class KafkaOpsDltRouterTest {
 
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class))
         .thenReturn(Map.of("simpleBean", consumer));
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
 
     // when
     router.afterPropertiesSet();
@@ -118,7 +121,7 @@ class KafkaOpsDltRouterTest {
   void shouldThrowWhenStartingUnknownTopic() {
     // prepare
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(Map.of());
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
     router.afterPropertiesSet();
 
     // when + then
@@ -130,7 +133,7 @@ class KafkaOpsDltRouterTest {
   void shouldDestroyCleanly() {
     // prepare
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(Map.of());
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
     router.afterPropertiesSet();
 
     // when + then (no exception)
@@ -147,7 +150,7 @@ class KafkaOpsDltRouterTest {
         .thenReturn(Map.of("ordersBean", consumer1, "paymentsBean", consumer2));
     mockContainerFactory();
 
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
     router.setKafkaTemplate(mockTemplate);
 
     // when
@@ -319,7 +322,7 @@ class KafkaOpsDltRouterTest {
         .thenReturn(Map.of("bean", consumer));
     mockContainerFactory();
 
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
+    var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
     router.setKafkaTemplate(mockTemplate);
     return router;
   }

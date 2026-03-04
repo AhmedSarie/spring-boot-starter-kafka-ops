@@ -12,6 +12,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
@@ -51,8 +52,9 @@ public class KafkaOpsConfiguration {
   @Bean
   @ConditionalOnMissingBean
   @ConditionalOnProperty(value = "kafka.ops.dlt-routing.enabled", havingValue = "true")
-  KafkaOpsDltRouter kafkaOpsDltRouter(ListableBeanFactory beanFactory) {
-    return new KafkaOpsDltRouter(beanFactory, kafkaOpsProperties);
+  KafkaOpsDltRouter kafkaOpsDltRouter(ListableBeanFactory beanFactory,
+                                      ApplicationEventPublisher eventPublisher) {
+    return new KafkaOpsDltRouter(beanFactory, kafkaOpsProperties, eventPublisher);
   }
 
   @Configuration

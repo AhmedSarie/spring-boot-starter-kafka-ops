@@ -21,6 +21,9 @@ var Api = {
         return m.request({ method: 'GET', url: this.CONFIG_URL }).then(function (config) {
             var url = config.retryEndpointUrl || 'operational/consumer-retries';
             Api.basePath = '/' + url.replace(/^\/+/, '');
+            if (config.dltRouting) {
+                AppState.dltRouting = config.dltRouting;
+            }
         }).catch(function () {
             Api.disabled = true;
             throw new Error('Console is not enabled. Set kafka.ops.console.enabled=true in your application configuration.');

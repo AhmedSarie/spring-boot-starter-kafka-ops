@@ -12,7 +12,8 @@ var PollView = (function () {
         correctionValue: '',
         sending: false,
         jsonError: false,
-        showDiffModal: false
+        showDiffModal: false,
+        headersExpanded: false
     };
 
     var anyBusy = function () { return state.polling || state.retrying || state.sending; };
@@ -39,6 +40,7 @@ var PollView = (function () {
         state.message = null;
         state.pollResponse = null;
         state.showEditor = false;
+        state.headersExpanded = false;
 
         Api.poll(state.topic, state.partition, state.offset).then(function (data) {
             state.pollResponse = data;
@@ -170,13 +172,18 @@ var PollView = (function () {
         if (keys.length === 0) return null;
 
         return m('.result-headers', [
-            m('span.result-label', 'Headers'),
-            m('.headers-grid', keys.map(function (k) {
-                return m('.header-entry', { key: k }, [
-                    m('span.header-key', k),
-                    m('span.header-val', resp.headers[k])
-                ]);
-            }))
+            m('span.result-label.headers-toggle', {
+                onclick: function () { state.headersExpanded = !state.headersExpanded; },
+                style: 'cursor:pointer'
+            }, 'Headers (' + keys.length + ') ' + (state.headersExpanded ? '\u25BC' : '\u25B6')),
+            state.headersExpanded
+                ? m('.headers-grid', keys.map(function (k) {
+                    return m('.header-entry', { key: k }, [
+                        m('span.header-key', k),
+                        m('span.header-val', resp.headers[k])
+                    ]);
+                }))
+                : null
         ]);
     }
 
@@ -196,10 +203,22 @@ var PollView = (function () {
 
             var history = getHistory();
 
+            var topicInfo = state.topic ? AppState.findTopicInfo(state.topic) : null;
+
             return m(Layout, [
-                // Topic heading
+                // Topic heading with metadata
                 state.topic
-                    ? m('.poll-topic-heading', state.topic)
+                    ? m('.poll-topic-heading', [
+                        state.topic,
+                        topicInfo ? m('.topic-meta-badges', [
+                            topicInfo.partitions !== undefined
+                                ? m('span.meta-badge', topicInfo.partitions + ' partition' + (topicInfo.partitions !== 1 ? 's' : ''))
+                                : null,
+                            topicInfo.messageCount !== undefined
+                                ? m('span.meta-badge', AppState.formatCount(topicInfo.messageCount) + ' messages')
+                                : null
+                        ]) : null
+                    ])
                     : null,
 
                 // Poll form (2-column: partition + offset)

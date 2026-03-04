@@ -13,6 +13,7 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -33,6 +34,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
 
   private final ListableBeanFactory beanFactory;
   private final KafkaOpsProperties kafkaOpsProperties;
+  private final ApplicationEventPublisher eventPublisher;
   private final Map<String, RouteState> routes = new ConcurrentHashMap<>();
   private KafkaTemplate<byte[], byte[]> kafkaTemplate;
 
@@ -129,7 +131,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     containerProps.setGroupId(kafkaOpsProperties.getGroupId() + "-dlt-router");
     containerProps.setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
     containerProps.setIdleEventInterval(
-        kafkaOpsProperties.getDltRouting().getIdleShutdownMinutes() * 60_000L);
+        kafkaOpsProperties.getDltRouting().getIdleShutdownSeconds() * 1000L);
     containerProps.setMessageListener((AcknowledgingMessageListener<byte[], byte[]>) (record, ack) ->
         routeRecord(record, retryTopicName, mainTopicName, ack));
 
@@ -137,6 +139,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     container.setAutoStartup(false);
     container.setConcurrency(1);
     container.setCommonErrorHandler(new DefaultErrorHandler(new FixedBackOff(1000L, 3L)));
+    container.setApplicationEventPublisher(eventPublisher);
     return container;
   }
 

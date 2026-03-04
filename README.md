@@ -18,12 +18,13 @@ When your Kafka consumer fails to process a message, you typically need to manua
 The library ships an embedded web UI at `/kafka-ops/index.html` — no separate deployment, no CDN, works fully offline.
 
 **Features:**
-- **Consumer sidebar** — Tree layout showing main → DLT → retry topics with live message counts. Resizable for long topic names.
+- **Consumer sidebar** — Tree layout showing main → DLT → retry topics. Resizable for long topic names. Shows DLT routing config (cron, max cycles, idle timeout) when enabled.
+- **Topic dashboard** — Partition count and message count badges displayed in the topic heading
 - **Poll view** — Poll by partition/offset with full metadata badges (key, timestamp, headers) and a collapsible JSON tree viewer
-- **Batch browse** — Browse messages by timestamp or partition/offset with an expandable results table
+- **Batch browse** — Browse messages by timestamp (defaults to last hour) or partition/offset with an expandable results table and collapsible headers
 - **Retry & Correct** — One-click retry or edit JSON and send corrections with diff confirmation popup
 - **Drain DLT** — Start DLT routing directly from the sidebar for any configured DLT topic
-- **Poll history** — Last 10 partition/offset pairs per topic, persisted across browser sessions
+- **Poll history** — Last 10 partition/offset pairs per topic in both Poll and Browse views, persisted across browser sessions
 
 The console uses [Mithril.js](https://mithril.js.org) and [Pico CSS](https://picocss.com), both vendored in the JAR. No Node.js, no npm, no build step, no runtime internet required.
 
@@ -186,7 +187,7 @@ Sends the payload directly to your consumer without reading from Kafka.
 ```
 POST /operational/consumer-retries/dlt-routing/orders/start
 ```
-Starts routing messages from `orders.DLT` → `orders-retry`. Requires `kafka.ops.dlt-routing.enabled=true` and the consumer to declare both `getDltTopic()` and `getRetryTopic()`.
+Starts routing messages from `orders.DLT` → `orders-retry`. Requires `kafka.ops.dlt-routing.enabled=true` and the consumer to declare both `withDlt()` and `withRetry()` on its `TopicConfig`.
 
 The router uses a fixed consumer group (`{group-id}-dlt-router`) so it is safe in multi-pod deployments — the broker handles partition assignment across pods. Only messages that existed before the trigger time are routed; newer messages are left for the next run. The router stops automatically after the topic is idle (configurable), and restarts periodically via cron to catch new DLT messages.
 
@@ -194,11 +195,13 @@ Each time a message is routed from DLT → retry, the router stamps a `kafka-ops
 
 **Tuning automatic retry duration:** The total time a message keeps being retried automatically is roughly `max-cycles × restart-cron interval`. For example, with `max-cycles=10` and `restart-cron` set to every 6 hours (`0 0 */6 * * *`), a message is retried for up to ~2.5 days before being permanently skipped. To stop retries sooner, deploy with fewer cycles or a higher cron frequency. To discard DLT data immediately, involve Kafka admins to delete the topic data or adjust the topic retention policy.
 
+**DLT header handling:** Spring Kafka's `DeadLetterPublishingRecoverer` writes headers like `kafka_dlt-original-offset`, `kafka_dlt-original-partition`, and `kafka_dlt-original-timestamp` as binary (BigEndian int/long). The library automatically decodes these into readable numbers in both the API responses and the console. The `kafka_dlt-exception-stacktrace` header is filtered out from responses to keep payloads compact.
+
 ### Console config (used by the UI)
 ```
 GET /kafka-ops/api/config
 ```
-Returns the configured API base path so the UI can resolve endpoints dynamically.
+Returns the configured API base path and DLT routing settings so the UI can resolve endpoints and display configuration dynamically.
 
 ## Configuration
 
@@ -211,7 +214,7 @@ Returns the configured API base path so the UI can resolve endpoints dynamically
 | `kafka.ops.max-poll-interval-ms`              | `5000`                         | Timeout for single-message poll                                                                                            |
 | `kafka.ops.batch.max-limit`                   | `100`                          | Maximum records returned by batch browse                                                                                   |
 | `kafka.ops.dlt-routing.enabled`               | `false`                        | Enable the DLT router bean                                                                                                 |
-| `kafka.ops.dlt-routing.idle-shutdown-minutes` | `5`                            | Stop the router after this many minutes with no new DLT messages                                                           |
+| `kafka.ops.dlt-routing.idle-shutdown-seconds` | `10`                           | Stop the router after this many seconds with no new DLT messages                                                           |
 | `kafka.ops.dlt-routing.restart-cron`          | `0 */30 * * * *`               | Cron expression controlling when the router restarts to check for new DLT messages. Use `-` to disable automatic restarts. |
 | `kafka.ops.dlt-routing.max-cycles`            | `10`                           | Skip a DLT message after it has been routed this many times (prevents infinite loops)                                      |
 
