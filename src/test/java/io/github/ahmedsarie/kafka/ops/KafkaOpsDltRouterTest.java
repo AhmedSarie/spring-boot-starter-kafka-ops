@@ -8,6 +8,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -16,6 +18,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +42,7 @@ class KafkaOpsDltRouterTest {
   void setUp() {
     beanFactory = mock(ListableBeanFactory.class);
     properties = new KafkaOpsProperties(null, "test-ops-group", null, null,
-        new KafkaOpsProperties.DltRouting(true, 5, "0 */30 * * * *"));
+        new KafkaOpsProperties.DltRouting(true, 5, "0 */30 * * * *", 10));
     mockTemplate = mock(KafkaTemplate.class);
   }
 
@@ -156,7 +159,7 @@ class KafkaOpsDltRouterTest {
   }
 
   @Test
-  @DisplayName("routeRecord sends record to retry topic and acknowledges when timestamp is within cutoff")
+  @DisplayName("routeRecord sends record to retry topic with cycle header and acknowledges")
   @SuppressWarnings("unchecked")
   void shouldRouteRecordToRetryTopic() {
     // prepare
@@ -166,7 +169,7 @@ class KafkaOpsDltRouterTest {
 
     var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
         "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
-        new org.apache.kafka.common.header.internals.RecordHeaders(), java.util.Optional.empty());
+        new RecordHeaders(), java.util.Optional.empty());
     var future = CompletableFuture.completedFuture(
         new RecordMetadata(new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
     when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
@@ -178,6 +181,60 @@ class KafkaOpsDltRouterTest {
     // then
     verify(mockTemplate).send(any(ProducerRecord.class));
     verify(ack).acknowledge();
+    var cycleHeader = record.headers().lastHeader("kafka-ops-dlt-cycle");
+    assertEquals("1", new String(cycleHeader.value(), StandardCharsets.UTF_8));
+  }
+
+  @Test
+  @DisplayName("routeRecord skips and acknowledges when max cycles exceeded")
+  @SuppressWarnings("unchecked")
+  void shouldSkipWhenMaxCyclesExceeded() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
+    router.start("orders");
+
+    var headers = new RecordHeaders();
+    headers.add("kafka-ops-dlt-cycle", "10".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
+        headers, java.util.Optional.empty());
+    var ack = mock(Acknowledgment.class);
+
+    // when
+    router.routeRecord(record, "orders-retry", "orders", ack);
+
+    // then — acknowledged (offset moves forward) but NOT sent
+    verify(ack).acknowledge();
+    verify(mockTemplate, never()).send(any(ProducerRecord.class));
+  }
+
+  @Test
+  @DisplayName("routeRecord increments existing cycle count header")
+  @SuppressWarnings("unchecked")
+  void shouldIncrementExistingCycleCount() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
+    router.start("orders");
+
+    var headers = new RecordHeaders();
+    headers.add("kafka-ops-dlt-cycle", "3".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
+        headers, java.util.Optional.empty());
+    var future = CompletableFuture.completedFuture(
+        new RecordMetadata(new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
+    when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
+    var ack = mock(Acknowledgment.class);
+
+    // when
+    router.routeRecord(record, "orders-retry", "orders", ack);
+
+    // then
+    verify(mockTemplate).send(any(ProducerRecord.class));
+    var cycleHeader = record.headers().lastHeader("kafka-ops-dlt-cycle");
+    assertEquals("4", new String(cycleHeader.value(), StandardCharsets.UTF_8));
   }
 
   @Test
@@ -192,7 +249,7 @@ class KafkaOpsDltRouterTest {
     // record timestamp far in the future (beyond any cutoff)
     var record = new ConsumerRecord<>("orders.DLT", 0, 5L, Long.MAX_VALUE, null, 0, 0,
         "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
-        new org.apache.kafka.common.header.internals.RecordHeaders(), java.util.Optional.empty());
+        new RecordHeaders(), java.util.Optional.empty());
     var ack = mock(Acknowledgment.class);
 
     // when
@@ -214,7 +271,7 @@ class KafkaOpsDltRouterTest {
 
     var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
         "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
-        new org.apache.kafka.common.header.internals.RecordHeaders(), java.util.Optional.empty());
+        new RecordHeaders(), java.util.Optional.empty());
     var failedFuture = new CompletableFuture<RecordMetadata>();
     failedFuture.completeExceptionally(new RuntimeException("Kafka send failed"));
     when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(failedFuture);

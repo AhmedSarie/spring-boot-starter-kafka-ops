@@ -24,7 +24,7 @@ public class KafkaOpsPropertiesTest {
   void testHappyScenario1() {
     // prepare
     var batch = new Batch(50);
-    var dltRouting = new DltRouting(true, 10, "0 0 22 * * *");
+    var dltRouting = new DltRouting(true, 10, "0 0 22 * * *", 5);
 
     // when
     var properties = new KafkaOpsProperties(restApi, groupId, maxPollIntervalMs, batch, dltRouting);
@@ -38,6 +38,7 @@ public class KafkaOpsPropertiesTest {
     assertEquals(true, properties.getDltRouting().isEnabled());
     assertEquals(10, properties.getDltRouting().getIdleShutdownMinutes());
     assertEquals("0 0 22 * * *", properties.getDltRouting().getRestartCron());
+    assertEquals(5, properties.getDltRouting().getMaxCycles());
   }
 
   @Test
@@ -86,13 +87,14 @@ public class KafkaOpsPropertiesTest {
     assertFalse(properties.getDltRouting().isEnabled());
     assertEquals(5, properties.getDltRouting().getIdleShutdownMinutes());
     assertEquals("0 */30 * * * *", properties.getDltRouting().getRestartCron());
+    assertEquals(10, properties.getDltRouting().getMaxCycles());
   }
 
   @Test
   @DisplayName("KafkaOpsProperties sets custom DLT routing values")
   void testDltRoutingCustomValues() {
     // prepare
-    var dltRouting = new DltRouting(true, 15, "0 0 0 * * SAT,SUN");
+    var dltRouting = new DltRouting(true, 15, "0 0 0 * * SAT,SUN", 20);
 
     // when
     var properties = new KafkaOpsProperties(restApi, groupId, maxPollIntervalMs, null, dltRouting);
@@ -101,5 +103,6 @@ public class KafkaOpsPropertiesTest {
     assertEquals(true, properties.getDltRouting().isEnabled());
     assertEquals(15, properties.getDltRouting().getIdleShutdownMinutes());
     assertEquals("0 0 0 * * SAT,SUN", properties.getDltRouting().getRestartCron());
+    assertEquals(20, properties.getDltRouting().getMaxCycles());
   }
 }

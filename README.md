@@ -190,6 +190,10 @@ Starts routing messages from `orders.DLT` → `orders-retry`. Requires `kafka.op
 
 The router uses a fixed consumer group (`{group-id}-dlt-router`) so it is safe in multi-pod deployments — the broker handles partition assignment across pods. Only messages that existed before the trigger time are routed; newer messages are left for the next run. The router stops automatically after the topic is idle (configurable), and restarts periodically via cron to catch new DLT messages.
 
+Each time a message is routed from DLT → retry, the router stamps a `kafka-ops-dlt-cycle` header and increments it on every cycle. Once the cycle count reaches `max-cycles`, the message is skipped (acknowledged without routing) to prevent infinite loops.
+
+**Tuning automatic retry duration:** The total time a message keeps being retried automatically is roughly `max-cycles × restart-cron interval`. For example, with `max-cycles=10` and `restart-cron` set to every 6 hours (`0 0 */6 * * *`), a message is retried for up to ~2.5 days before being permanently skipped. To stop retries sooner, deploy with fewer cycles or a higher cron frequency. To discard DLT data immediately, involve Kafka admins to delete the topic data or adjust the topic retention policy.
+
 ### Console config (used by the UI)
 ```
 GET /kafka-ops/api/config
@@ -209,6 +213,7 @@ Returns the configured API base path so the UI can resolve endpoints dynamically
 | `kafka.ops.dlt-routing.enabled`               | `false`                        | Enable the DLT router bean                                                                                                 |
 | `kafka.ops.dlt-routing.idle-shutdown-minutes` | `5`                            | Stop the router after this many minutes with no new DLT messages                                                           |
 | `kafka.ops.dlt-routing.restart-cron`          | `0 */30 * * * *`               | Cron expression controlling when the router restarts to check for new DLT messages. Use `-` to disable automatic restarts. |
+| `kafka.ops.dlt-routing.max-cycles`            | `10`                           | Skip a DLT message after it has been routed this many times (prevents infinite loops)                                      |
 
 ## Avro support
 

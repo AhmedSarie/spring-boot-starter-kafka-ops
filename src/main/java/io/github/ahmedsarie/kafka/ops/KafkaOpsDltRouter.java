@@ -1,5 +1,6 @@
 package io.github.ahmedsarie.kafka.ops;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Getter;
@@ -7,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
@@ -26,6 +28,8 @@ import org.springframework.util.backoff.FixedBackOff;
 @Slf4j
 @RequiredArgsConstructor
 class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
+
+  private static final String CYCLE_COUNT_HEADER = "kafka-ops-dlt-cycle";
 
   private final ListableBeanFactory beanFactory;
   private final KafkaOpsProperties kafkaOpsProperties;
@@ -157,15 +161,41 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
       return;
     }
 
+    var maxCycles = kafkaOpsProperties.getDltRouting().getMaxCycles();
+    var currentCycle = readCycleCount(record);
+    if (currentCycle >= maxCycles) {
+      log.warn("Max DLT cycles ({}) reached for topic={}, partition={}, offset={}. Skipping.",
+          maxCycles, record.topic(), record.partition(), record.offset());
+      ack.acknowledge();
+      return;
+    }
+
+    record.headers().remove(CYCLE_COUNT_HEADER);
+    record.headers().add(CYCLE_COUNT_HEADER,
+        String.valueOf(currentCycle + 1).getBytes(StandardCharsets.UTF_8));
+
     try {
       kafkaTemplate.send(new ProducerRecord<>(retryTopic, null, record.key(), record.value(), record.headers())).get();
       ack.acknowledge();
-      log.info("Routed DLT record topic={}, partition={}, offset={} -> {}",
-          record.topic(), record.partition(), record.offset(), retryTopic);
+      log.info("Routed DLT record topic={}, partition={}, offset={} -> {} (cycle={})",
+          record.topic(), record.partition(), record.offset(), retryTopic, currentCycle + 1);
     } catch (Exception e) {
       log.error("Failed to route DLT record topic={}, partition={}, offset={} -> {}",
           record.topic(), record.partition(), record.offset(), retryTopic, e);
       throw new RuntimeException("Failed to route record to retry topic", e);
+    }
+  }
+
+  private int readCycleCount(ConsumerRecord<byte[], byte[]> record) {
+    Header header = record.headers().lastHeader(CYCLE_COUNT_HEADER);
+    if (header == null || header.value() == null) {
+      return 0;
+    }
+    try {
+      return Integer.parseInt(new String(header.value(), StandardCharsets.UTF_8));
+    } catch (NumberFormatException e) {
+      log.warn("Invalid cycle count header value, defaulting to 0");
+      return 0;
     }
   }
 
