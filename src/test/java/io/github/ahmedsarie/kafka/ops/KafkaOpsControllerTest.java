@@ -370,41 +370,6 @@ class KafkaOpsControllerTest {
 
   @Test
   @SneakyThrows
-  @DisplayName("DLT routing start with fromTimestamp should return 200 on success")
-  void shouldStartDltRoutingWithTimestamp() {
-
-    // prepare
-    doNothing().when(dltRouter).startFromTimestamp("orders", 1709251200000L, false);
-
-    // when
-    this.mockMvc.perform(post(DLT_ROUTING_API_URI + "/orders/start?fromTimestamp=1709251200000"))
-        .andDo(print())
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.id").exists());
-
-    verify(dltRouter).startFromTimestamp("orders", 1709251200000L, false);
-  }
-
-  @Test
-  @SneakyThrows
-  @DisplayName("DLT routing start with fromTimestamp and force should return 200 on success")
-  void shouldStartDltRoutingWithTimestampAndForce() {
-
-    // prepare
-    doNothing().when(dltRouter).startFromTimestamp("orders", 1709251200000L, true);
-
-    // when
-    this.mockMvc.perform(
-            post(DLT_ROUTING_API_URI + "/orders/start?fromTimestamp=1709251200000&force=true"))
-        .andDo(print())
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.id").exists());
-
-    verify(dltRouter).startFromTimestamp("orders", 1709251200000L, true);
-  }
-
-  @Test
-  @SneakyThrows
   @DisplayName("DLT routing start should return 404 when topic not configured")
   void shouldReturn404WhenDltRouterTopicNotFound() {
 

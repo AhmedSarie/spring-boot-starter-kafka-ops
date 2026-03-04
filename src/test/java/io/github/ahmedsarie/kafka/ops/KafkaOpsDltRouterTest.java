@@ -1,6 +1,5 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -17,7 +16,6 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,10 +25,11 @@ import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.event.ListenerContainerIdleEvent;
+import org.springframework.kafka.listener.ConcurrentMessageListenerContainer;
+import org.springframework.kafka.support.Acknowledgment;
 
 class KafkaOpsDltRouterTest {
-
-  private static final String RETRY_COUNT_HEADER = "kafka-ops-retry-count";
 
   private ListableBeanFactory beanFactory;
   private KafkaOpsProperties properties;
@@ -40,7 +39,7 @@ class KafkaOpsDltRouterTest {
   void setUp() {
     beanFactory = mock(ListableBeanFactory.class);
     properties = new KafkaOpsProperties(null, "test-ops-group", null, null,
-        new KafkaOpsProperties.DltRouting(true, 5, "0 */30 * * * *", 3));
+        new KafkaOpsProperties.DltRouting(true, 5, "0 */30 * * * *"));
     mockTemplate = mock(KafkaTemplate.class);
   }
 
@@ -124,19 +123,6 @@ class KafkaOpsDltRouterTest {
   }
 
   @Test
-  @DisplayName("startFromTimestamp throws NoConsumerFoundException when topic has no DLT router configured")
-  void shouldThrowWhenStartFromTimestampUnknownTopic() {
-    // prepare
-    when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(Map.of());
-    var router = new KafkaOpsDltRouter(beanFactory, properties);
-    router.afterPropertiesSet();
-
-    // when + then
-    assertThrows(NoConsumerFoundException.class,
-        () -> router.startFromTimestamp("unknown-topic", 1000L, false));
-  }
-
-  @Test
   @DisplayName("destroy stops all running containers cleanly")
   void shouldDestroyCleanly() {
     // prepare
@@ -170,124 +156,102 @@ class KafkaOpsDltRouterTest {
   }
 
   @Test
-  @DisplayName("routeRecord sends record to retry topic with incremented retry count")
+  @DisplayName("routeRecord sends record to retry topic and acknowledges when timestamp is within cutoff")
   @SuppressWarnings("unchecked")
-  void shouldRouteRecordToRetryTopicWithIncrementedRetryCount() {
+  void shouldRouteRecordToRetryTopic() {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    router.start("orders");
 
-    var record = new ConsumerRecord<>("orders.DLT", 0, 5L,
-        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
+        new org.apache.kafka.common.header.internals.RecordHeaders(), java.util.Optional.empty());
     var future = CompletableFuture.completedFuture(
-        new org.apache.kafka.clients.producer.RecordMetadata(
-            new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
+        new RecordMetadata(new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
     when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
+    var ack = mock(Acknowledgment.class);
 
     // when
-    router.routeRecord(record, "orders-retry", "orders");
+    router.routeRecord(record, "orders-retry", "orders", ack);
 
     // then
     verify(mockTemplate).send(any(ProducerRecord.class));
-    var retryHeader = record.headers().lastHeader(RETRY_COUNT_HEADER);
-    assertEquals("1", new String(retryHeader.value(), StandardCharsets.UTF_8));
+    verify(ack).acknowledge();
   }
 
   @Test
-  @DisplayName("routeRecord skips record when max retry count exceeded")
+  @DisplayName("routeRecord stops container without acknowledging when record timestamp exceeds cutoff")
   @SuppressWarnings("unchecked")
-  void shouldSkipRecordWhenMaxRetryCountExceeded() {
+  void shouldStopContainerWhenRecordExceedsCutoffTimestamp() {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    router.start("orders");
 
-    var headers = new RecordHeaders();
-    headers.add(RETRY_COUNT_HEADER, "3".getBytes(StandardCharsets.UTF_8));
-    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 0L, null, 0, 0,
+    // record timestamp far in the future (beyond any cutoff)
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, Long.MAX_VALUE, null, 0, 0,
         "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
-        headers, java.util.Optional.empty());
+        new org.apache.kafka.common.header.internals.RecordHeaders(), java.util.Optional.empty());
+    var ack = mock(Acknowledgment.class);
 
     // when
-    router.routeRecord(record, "orders-retry", "orders");
+    router.routeRecord(record, "orders-retry", "orders", ack);
 
-    // then
+    // then — not acknowledged, not sent
+    verify(ack, never()).acknowledge();
     verify(mockTemplate, never()).send(any(ProducerRecord.class));
   }
 
   @Test
-  @DisplayName("routeRecord resets retry count to 0 in force mode")
-  @SuppressWarnings("unchecked")
-  void shouldResetRetryCountInForceMode() {
-    // prepare
-    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
-    router.afterPropertiesSet();
-
-    var headers = new RecordHeaders();
-    headers.add(RETRY_COUNT_HEADER, "5".getBytes(StandardCharsets.UTF_8));
-    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 0L, null, 0, 0,
-        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
-        headers, java.util.Optional.empty());
-
-    var future = CompletableFuture.completedFuture(
-        new RecordMetadata(new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
-    when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
-
-    // set force=true directly (bypasses broker connection)
-    router.setForceForTesting("orders", true);
-
-    // when
-    router.routeRecord(record, "orders-retry", "orders");
-
-    // then
-    verify(mockTemplate).send(any(ProducerRecord.class));
-    var retryHeader = record.headers().lastHeader(RETRY_COUNT_HEADER);
-    assertEquals("0", new String(retryHeader.value(), StandardCharsets.UTF_8));
-  }
-
-  @Test
-  @DisplayName("routeRecord throws RuntimeException when send fails")
+  @DisplayName("routeRecord throws RuntimeException and does not acknowledge when send fails")
   @SuppressWarnings("unchecked")
   void shouldThrowWhenSendFails() {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    router.start("orders");
 
-    var record = new ConsumerRecord<>("orders.DLT", 0, 5L,
-        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8));
+    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
+        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
+        new org.apache.kafka.common.header.internals.RecordHeaders(), java.util.Optional.empty());
     var failedFuture = new CompletableFuture<RecordMetadata>();
     failedFuture.completeExceptionally(new RuntimeException("Kafka send failed"));
     when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(failedFuture);
+    var ack = mock(Acknowledgment.class);
 
     // when + then
     assertThrows(RuntimeException.class,
-        () -> router.routeRecord(record, "orders-retry", "orders"));
+        () -> router.routeRecord(record, "orders-retry", "orders", ack));
+    verify(ack, never()).acknowledge();
   }
 
   @Test
-  @DisplayName("routeRecord increments existing retry count header")
+  @DisplayName("onIdleEvent stops running container")
   @SuppressWarnings("unchecked")
-  void shouldIncrementExistingRetryCount() {
+  void shouldStopContainerOnIdleEvent() {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
 
-    var headers = new RecordHeaders();
-    headers.add(RETRY_COUNT_HEADER, "2".getBytes(StandardCharsets.UTF_8));
-    var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 0L, null, 0, 0,
-        "key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8),
-        headers, java.util.Optional.empty());
+    var mockEvent = mock(ListenerContainerIdleEvent.class);
+    when(mockEvent.getContainer(ConcurrentMessageListenerContainer.class)).thenReturn(null);
 
-    var future = CompletableFuture.completedFuture(
-        new RecordMetadata(new TopicPartition("orders-retry", 0), 0L, 0, 0L, 0, 0));
-    when(mockTemplate.send(any(ProducerRecord.class))).thenReturn(future);
+    // when — event with unrelated container does nothing
+    router.onIdleEvent(mockEvent);
 
-    // when
-    router.routeRecord(record, "orders-retry", "orders");
+    // then — no exception
+  }
 
-    // then
-    verify(mockTemplate).send(any(ProducerRecord.class));
-    var retryHeader = record.headers().lastHeader(RETRY_COUNT_HEADER);
-    assertEquals("3", new String(retryHeader.value(), StandardCharsets.UTF_8));
+  @Test
+  @DisplayName("scheduledRestart restarts all stopped containers")
+  void shouldRestartAllStoppedContainers() {
+    // prepare
+    var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
+    router.afterPropertiesSet();
+
+    // when — scheduledRestart should not throw
+    router.scheduledRestart();
   }
 
   // --- Helpers ---

@@ -16,7 +16,7 @@ public class KafkaOpsProperties {
   private static final boolean DEFAULT_DLT_ENABLED = false;
   private static final int DEFAULT_DLT_IDLE_SHUTDOWN_MINUTES = 5;
   private static final String DEFAULT_DLT_RESTART_CRON = "0 */30 * * * *";
-  private static final int DEFAULT_DLT_MAX_RETRY_COUNT = 3;
+
 
   private final String groupId;
 
@@ -36,7 +36,7 @@ public class KafkaOpsProperties {
     this.batch = batch != null ? batch : new Batch(DEFAULT_BATCH_MAX_LIMIT);
     this.dltRouting = dltRouting != null ? dltRouting : new DltRouting(
         DEFAULT_DLT_ENABLED, DEFAULT_DLT_IDLE_SHUTDOWN_MINUTES,
-        DEFAULT_DLT_RESTART_CRON, DEFAULT_DLT_MAX_RETRY_COUNT);
+        DEFAULT_DLT_RESTART_CRON);
   }
 
   @Getter
@@ -58,6 +58,5 @@ public class KafkaOpsProperties {
     private final boolean enabled;
     private final int idleShutdownMinutes;
     private final String restartCron;
-    private final int maxRetryCount;
   }
 }

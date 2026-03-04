@@ -185,15 +185,10 @@ Sends the payload directly to your consumer without reading from Kafka.
 ### Start DLT routing
 ```
 POST /operational/consumer-retries/dlt-routing/orders/start
-POST /operational/consumer-retries/dlt-routing/orders/start?fromTimestamp=1700000000000
-POST /operational/consumer-retries/dlt-routing/orders/start?fromTimestamp=1700000000000&force=true
 ```
 Starts routing messages from `orders.DLT` → `orders-retry`. Requires `kafka.ops.dlt-routing.enabled=true` and the consumer to declare both `getDltTopic()` and `getRetryTopic()`.
 
-- `fromTimestamp` — seek to a specific point in the DLT before routing (useful for replaying a specific incident window)
-- `force=true` — reset the `kafka-ops-retry-count` header to 0, allowing exhausted messages to be retried again
-
-The router stops automatically after the topic is idle (configurable), and restarts periodically to catch new DLT messages.
+The router uses a fixed consumer group (`{group-id}-dlt-router`) so it is safe in multi-pod deployments — the broker handles partition assignment across pods. Only messages that existed before the trigger time are routed; newer messages are left for the next run. The router stops automatically after the topic is idle (configurable), and restarts periodically via cron to catch new DLT messages.
 
 ### Console config (used by the UI)
 ```
@@ -214,7 +209,6 @@ Returns the configured API base path so the UI can resolve endpoints dynamically
 | `kafka.ops.dlt-routing.enabled`               | `false`                        | Enable the DLT router bean                                                                                                 |
 | `kafka.ops.dlt-routing.idle-shutdown-minutes` | `5`                            | Stop the router after this many minutes with no new DLT messages                                                           |
 | `kafka.ops.dlt-routing.restart-cron`          | `0 */30 * * * *`               | Cron expression controlling when the router restarts to check for new DLT messages. Use `-` to disable automatic restarts. |
-| `kafka.ops.dlt-routing.max-retry-count`       | `3`                            | Skip a DLT message after it has been routed this many times (prevents infinite loops)                                      |
 
 ## Avro support
 

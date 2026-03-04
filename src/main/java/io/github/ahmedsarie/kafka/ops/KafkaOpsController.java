@@ -135,11 +135,7 @@ class KafkaOpsController {
   }
 
   @PostMapping("/dlt-routing/{topic}/start")
-  public ResponseEntity<?> startDltRouting(
-      @PathVariable("topic") String topic,
-      @RequestParam(required = false) Long fromTimestamp,
-      @RequestParam(required = false, defaultValue = "false") boolean force
-  ) {
+  public ResponseEntity<?> startDltRouting(@PathVariable("topic") String topic) {
     try {
       var id = UUID.randomUUID().toString();
       MDC.put("api-response-id", id);
@@ -150,14 +146,8 @@ class KafkaOpsController {
             new NoConsumerFoundException("DLT routing is not enabled. Set kafka.ops.dlt-routing.enabled=true"));
       }
 
-      if (fromTimestamp != null) {
-        log.info(format("DLT routing start from timestamp=%d for topic=%s, force=%s",
-            fromTimestamp, topic, force));
-        dltRouter.get().startFromTimestamp(topic, fromTimestamp, force);
-      } else {
-        log.info(format("DLT routing start for topic=%s", topic));
-        dltRouter.get().start(topic);
-      }
+      log.info(format("DLT routing start for topic=%s", topic));
+      dltRouter.get().start(topic);
 
       return ResponseEntity.ok(new KafkaOpsResponse(id));
     } catch (NoConsumerFoundException e) {
