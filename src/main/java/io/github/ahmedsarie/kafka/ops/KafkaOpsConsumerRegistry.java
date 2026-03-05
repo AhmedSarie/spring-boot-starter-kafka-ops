@@ -59,27 +59,29 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       return new KafkaOpsConsumerInfo(topicName, -1, -1);
     }
     var kafkaConsumer = entry.getValue();
-    try {
-      var partitionInfos = kafkaConsumer.partitionsFor(topicName);
-      var partitionCount = partitionInfos != null ? partitionInfos.size() : 0;
-      var topicPartitions = new ArrayList<TopicPartition>();
-      for (int i = 0; i < partitionCount; i++) {
-        topicPartitions.add(new TopicPartition(topicName, i));
-      }
-      long messageCount = 0;
-      if (!topicPartitions.isEmpty()) {
-        var endOffsets = kafkaConsumer.endOffsets(topicPartitions);
-        var beginningOffsets = kafkaConsumer.beginningOffsets(topicPartitions);
-        for (var tp : topicPartitions) {
-          var end = (Long) endOffsets.getOrDefault(tp, 0L);
-          var begin = (Long) beginningOffsets.getOrDefault(tp, 0L);
-          messageCount += (end - begin);
+    synchronized (kafkaConsumer) {
+      try {
+        var partitionInfos = kafkaConsumer.partitionsFor(topicName);
+        var partitionCount = partitionInfos != null ? partitionInfos.size() : 0;
+        var topicPartitions = new ArrayList<TopicPartition>();
+        for (int i = 0; i < partitionCount; i++) {
+          topicPartitions.add(new TopicPartition(topicName, i));
         }
+        long messageCount = 0;
+        if (!topicPartitions.isEmpty()) {
+          var endOffsets = kafkaConsumer.endOffsets(topicPartitions);
+          var beginningOffsets = kafkaConsumer.beginningOffsets(topicPartitions);
+          for (var tp : topicPartitions) {
+            var end = (Long) endOffsets.getOrDefault(tp, 0L);
+            var begin = (Long) beginningOffsets.getOrDefault(tp, 0L);
+            messageCount += (end - begin);
+          }
+        }
+        return new KafkaOpsConsumerInfo(topicName, partitionCount, messageCount);
+      } catch (Exception e) {
+        log.warn("Failed to get consumer details for topic={}", topicName, e);
+        return new KafkaOpsConsumerInfo(topicName, -1, -1);
       }
-      return new KafkaOpsConsumerInfo(topicName, partitionCount, messageCount);
-    } catch (Exception e) {
-      log.warn("Failed to get consumer details for topic={}", topicName, e);
-      return new KafkaOpsConsumerInfo(topicName, -1, -1);
     }
   }
 

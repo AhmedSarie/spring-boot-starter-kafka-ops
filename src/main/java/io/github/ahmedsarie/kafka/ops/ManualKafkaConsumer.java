@@ -25,55 +25,61 @@ class ManualKafkaConsumer {
   private static final Duration BATCH_POLL_TIMEOUT = Duration.ofMillis(200);
   private final Duration pollDuration;
 
-  synchronized <T> Optional<ConsumerRecord<String, T>> poll(
+  <T> Optional<ConsumerRecord<String, T>> poll(
       String topic,
       int partition,
       long offset,
       KafkaConsumer<String, T> kafkaConsumer
   ) {
-    assignAndSeek(kafkaConsumer, topic, partition, offset);
-    return tryPolling(topic, partition, offset, kafkaConsumer);
+    synchronized (kafkaConsumer) {
+      assignAndSeek(kafkaConsumer, topic, partition, offset);
+      return tryPolling(topic, partition, offset, kafkaConsumer);
+    }
   }
 
-  synchronized <T> List<ConsumerRecord<String, T>> pollBatch(
+  <T> List<ConsumerRecord<String, T>> pollBatch(
       String topic,
       int partition,
       long startOffset,
       int limit,
       KafkaConsumer<String, T> kafkaConsumer
   ) {
-    assignAndSeek(kafkaConsumer, topic, partition, startOffset);
-    return pollMultiple(kafkaConsumer, limit);
+    synchronized (kafkaConsumer) {
+      assignAndSeek(kafkaConsumer, topic, partition, startOffset);
+      return pollMultiple(kafkaConsumer, limit);
+    }
   }
 
-  synchronized <T> List<ConsumerRecord<String, T>> pollBatchByTimestamp(
+  <T> List<ConsumerRecord<String, T>> pollBatchByTimestamp(
       String topic,
       long startTimestamp,
       int limit,
       KafkaConsumer<String, T> kafkaConsumer
   ) {
-    var partitionInfos = kafkaConsumer.partitionsFor(topic);
-    var topicPartitions = new ArrayList<TopicPartition>();
-    var timestampsToSearch = new HashMap<TopicPartition, Long>();
-    for (var info : partitionInfos) {
-      var tp = new TopicPartition(topic, info.partition());
-      topicPartitions.add(tp);
-      timestampsToSearch.put(tp, startTimestamp);
-    }
-
-    kafkaConsumer.assign(topicPartitions);
-
-    Map<TopicPartition, OffsetAndTimestamp> offsets = kafkaConsumer.offsetsForTimes(timestampsToSearch);
-    for (var entry : offsets.entrySet()) {
-      if (entry.getValue() != null) {
-        kafkaConsumer.seek(entry.getKey(), entry.getValue().offset());
-      } else {
-        var endOffsets = kafkaConsumer.endOffsets(List.of(entry.getKey()));
-        kafkaConsumer.seek(entry.getKey(), endOffsets.getOrDefault(entry.getKey(), 0L));
+    synchronized (kafkaConsumer) {
+      var partitionInfos = kafkaConsumer.partitionsFor(topic);
+      var topicPartitions = new ArrayList<TopicPartition>();
+      var timestampsToSearch = new HashMap<TopicPartition, Long>();
+      for (var info : partitionInfos) {
+        var tp = new TopicPartition(topic, info.partition());
+        topicPartitions.add(tp);
+        timestampsToSearch.put(tp, startTimestamp);
       }
-    }
 
-    return pollMultiple(kafkaConsumer, limit);
+      kafkaConsumer.assign(topicPartitions);
+
+      Map<TopicPartition, OffsetAndTimestamp> offsets = kafkaConsumer.offsetsForTimes(timestampsToSearch);
+      for (var entry : offsets.entrySet()) {
+        if (entry.getValue() != null) {
+          kafkaConsumer.seek(entry.getKey(), entry.getValue().offset());
+        } else {
+          var endOffsets = kafkaConsumer.endOffsets(List.of(entry.getKey()));
+          kafkaConsumer.seek(entry.getKey(), endOffsets.getOrDefault(entry.getKey(), 0L));
+        }
+      }
+
+      return pollMultiple(kafkaConsumer, limit);
+    }
   }
 
   private <T> List<ConsumerRecord<String, T>> pollMultiple(
@@ -105,7 +111,8 @@ class ManualKafkaConsumer {
     } else {
       var consumerRecordsStream = stream(spliteratorUnknownSize(consumerRecords.iterator(), ORDERED), false);
       var item = consumerRecordsStream.filter(validate(partition, offset)).findFirst();
-      log.info("Returning consumer record: {}", item);
+      item.ifPresent(r -> log.info("Returning consumer record: topic={}, partition={}, offset={}",
+          r.topic(), r.partition(), r.offset()));
       return item;
     }
   }

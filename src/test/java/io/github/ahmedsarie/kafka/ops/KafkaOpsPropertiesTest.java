@@ -3,6 +3,7 @@ package io.github.ahmedsarie.kafka.ops;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.ahmedsarie.kafka.ops.KafkaOpsProperties.Batch;
 import io.github.ahmedsarie.kafka.ops.KafkaOpsProperties.DltRouting;
@@ -104,5 +105,25 @@ public class KafkaOpsPropertiesTest {
     assertEquals(15, properties.getDltRouting().getIdleShutdownSeconds());
     assertEquals("0 0 0 * * SAT,SUN", properties.getDltRouting().getRestartCron());
     assertEquals(20, properties.getDltRouting().getMaxCycles());
+  }
+
+  @Test
+  @DisplayName("RestApi defaults exposeErrorDetails to true when using two-arg constructor")
+  void testRestApiDefaultExposeErrorDetails() {
+    // when
+    var api = new RestApi(true, "retry-uri");
+
+    // then
+    assertTrue(api.isExposeErrorDetails());
+  }
+
+  @Test
+  @DisplayName("RestApi sets exposeErrorDetails to false when explicitly configured")
+  void testRestApiExposeErrorDetailsFalse() {
+    // when
+    var api = new RestApi(true, "retry-uri", false);
+
+    // then
+    assertFalse(api.isExposeErrorDetails());
   }
 }

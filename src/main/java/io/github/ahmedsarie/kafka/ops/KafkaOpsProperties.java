@@ -44,6 +44,11 @@ public class KafkaOpsProperties {
   public static class RestApi {
     private final boolean enabled;
     private final String retryEndpointUrl;
+    private final boolean exposeErrorDetails;
+
+    public RestApi(boolean enabled, String retryEndpointUrl) {
+      this(enabled, retryEndpointUrl, true);
+    }
   }
 
   @Getter
@@ -53,11 +58,17 @@ public class KafkaOpsProperties {
   }
 
   @Getter
-  @AllArgsConstructor
   public static class DltRouting {
     private final boolean enabled;
     private final int idleShutdownSeconds;
     private final String restartCron;
     private final int maxCycles;
+
+    public DltRouting(boolean enabled, int idleShutdownSeconds, String restartCron, int maxCycles) {
+      this.enabled = enabled;
+      this.idleShutdownSeconds = idleShutdownSeconds > 0 ? idleShutdownSeconds : DEFAULT_DLT_IDLE_SHUTDOWN_SECONDS;
+      this.restartCron = isEmpty(restartCron) ? DEFAULT_DLT_RESTART_CRON : restartCron;
+      this.maxCycles = maxCycles > 0 ? maxCycles : DEFAULT_DLT_MAX_CYCLES;
+    }
   }
 }

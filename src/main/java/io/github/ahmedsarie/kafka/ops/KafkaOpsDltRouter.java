@@ -36,11 +36,6 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
   private final KafkaOpsProperties kafkaOpsProperties;
   private final ApplicationEventPublisher eventPublisher;
   private final Map<String, RouteState> routes = new ConcurrentHashMap<>();
-  private KafkaTemplate<byte[], byte[]> kafkaTemplate;
-
-  void setKafkaTemplate(KafkaTemplate<byte[], byte[]> template) {
-    this.kafkaTemplate = template;
-  }
 
   @Override
   public void afterPropertiesSet() {
@@ -58,14 +53,11 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
         continue;
       }
 
-      if (kafkaTemplate == null) {
-        kafkaTemplate = KafkaOpsFactoryUtils.createByteArrayKafkaTemplate(consumer, beanFactory);
-      }
-
+      var routeTemplate = KafkaOpsFactoryUtils.createByteArrayKafkaTemplate(consumer, beanFactory);
       var consumerFactory = createConsumerFactory(consumer);
       var container = buildContainer(consumerFactory, dltTopicName, retryTopicName, mainTopicName);
 
-      routes.put(mainTopicName, new RouteState(container, retryTopicName, consumer));
+      routes.put(mainTopicName, new RouteState(container, retryTopicName, consumer, routeTemplate));
       log.info("Registered DLT router: {} -> {} -> {}", dltTopicName, retryTopicName, mainTopicName);
     }
   }
@@ -178,7 +170,7 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
         String.valueOf(currentCycle + 1).getBytes(StandardCharsets.UTF_8));
 
     try {
-      kafkaTemplate.send(new ProducerRecord<>(retryTopic, null, record.key(), record.value(), record.headers())).get();
+      state.getKafkaTemplate().send(new ProducerRecord<>(retryTopic, null, record.key(), record.value(), record.headers())).get();
       ack.acknowledge();
       log.info("Routed DLT record topic={}, partition={}, offset={} -> {} (cycle={})",
           record.topic(), record.partition(), record.offset(), retryTopic, currentCycle + 1);
@@ -197,8 +189,9 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     try {
       return Integer.parseInt(new String(header.value(), StandardCharsets.UTF_8));
     } catch (NumberFormatException e) {
-      log.warn("Invalid cycle count header value, defaulting to 0");
-      return 0;
+      var fallback = kafkaOpsProperties.getDltRouting().getMaxCycles() - 1;
+      log.error("Invalid cycle count header value, defaulting to {}", fallback);
+      return fallback;
     }
   }
 
@@ -219,13 +212,16 @@ class KafkaOpsDltRouter implements InitializingBean, DisposableBean {
     private final ConcurrentMessageListenerContainer<byte[], byte[]> container;
     private final String retryTopic;
     private final KafkaOpsAwareConsumer consumer;
+    private KafkaTemplate<byte[], byte[]> kafkaTemplate;
     private volatile long cutoffTimestamp;
 
     RouteState(ConcurrentMessageListenerContainer<byte[], byte[]> container,
-               String retryTopic, KafkaOpsAwareConsumer consumer) {
+               String retryTopic, KafkaOpsAwareConsumer consumer,
+               KafkaTemplate<byte[], byte[]> kafkaTemplate) {
       this.container = container;
       this.retryTopic = retryTopic;
       this.consumer = consumer;
+      this.kafkaTemplate = kafkaTemplate;
     }
 
     void setCutoffTimestamp(long cutoffTimestamp) {

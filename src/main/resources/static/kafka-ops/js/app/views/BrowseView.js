@@ -11,7 +11,7 @@ var BrowseView = (function () {
         hasMore: false,
         loading: false,
         filter: '',
-        expandedIndex: -1,
+        expandedKey: null,
         /* Per-expanded-row actions */
         retrying: false,
         showEditor: false,
@@ -88,7 +88,7 @@ var BrowseView = (function () {
         state.loading = true;
         if (!append) {
             state.records = [];
-            state.expandedIndex = -1;
+            state.expandedKey = null;
             state.showEditor = false;
         }
 
@@ -127,12 +127,13 @@ var BrowseView = (function () {
         return searchable.indexOf(q) !== -1;
     }
 
-    function expandRow(index) {
-        if (state.expandedIndex === index) {
-            state.expandedIndex = -1;
+    function expandRow(record) {
+        var key = record.partition + ':' + record.offset;
+        if (state.expandedKey === key) {
+            state.expandedKey = null;
             state.showEditor = false;
         } else {
-            state.expandedIndex = index;
+            state.expandedKey = key;
             state.showEditor = false;
             state.jsonError = false;
             state.headersExpanded = false;
@@ -220,7 +221,7 @@ var BrowseView = (function () {
         state.hasMore = false;
         state.loading = false;
         state.filter = '';
-        state.expandedIndex = -1;
+        state.expandedKey = null;
         state.retrying = false;
         state.showEditor = false;
         state.correctionValue = '';
@@ -244,8 +245,8 @@ var BrowseView = (function () {
             }
 
             var filteredRecords = state.records.filter(matchesFilter);
-            var expandedRecord = (state.expandedIndex >= 0 && state.expandedIndex < filteredRecords.length)
-                ? filteredRecords[state.expandedIndex]
+            var expandedRecord = state.expandedKey
+                ? filteredRecords.find(function (r) { return r.partition + ':' + r.offset === state.expandedKey; }) || null
                 : null;
 
             var topicInfo = state.topic ? AppState.findTopicInfo(state.topic) : null;
@@ -375,7 +376,7 @@ var BrowseView = (function () {
                                 value: state.filter,
                                 oninput: function (e) {
                                     state.filter = e.target.value;
-                                    state.expandedIndex = -1;
+                                    state.expandedKey = null;
                                     state.showEditor = false;
                                 }
                             })
@@ -394,12 +395,13 @@ var BrowseView = (function () {
                                 m('th', 'Value')
                             ])),
                             m('tbody', filteredRecords.map(function (record, i) {
-                                var isExpanded = state.expandedIndex === i;
+                                var recordKey = record.partition + ':' + record.offset;
+                                var isExpanded = state.expandedKey === recordKey;
                                 var rows = [];
 
                                 rows.push(m('tr.browse-row' + (isExpanded ? '.browse-row-active' : ''), {
                                     key: record.partition + ':' + record.offset,
-                                    onclick: function () { expandRow(i); }
+                                    onclick: function () { expandRow(record); }
                                 }, [
                                     m('td', record.partition),
                                     m('td', record.offset),
@@ -444,7 +446,7 @@ var BrowseView = (function () {
                                                 : null,
 
                                             /* Full JSON value */
-                                            m(JsonViewer, { data: record.value }),
+                                            m(JsonViewer, { data: record.value, instanceKey: record.partition + ':' + record.offset }),
 
                                             /* Action buttons */
                                             m('.action-buttons', { style: 'margin-top:0.75rem' }, [

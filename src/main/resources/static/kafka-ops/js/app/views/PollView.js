@@ -283,7 +283,7 @@ var PollView = (function () {
                     /* Headers */
                     renderHeaders(),
 
-                    m(JsonViewer, { data: state.message }),
+                    m(JsonViewer, { data: state.message, instanceKey: state.topic + ':' + state.partition + ':' + state.offset }),
                     m('.action-buttons', [
                         m('button.btn.btn-secondary[type=button]', {
                             disabled: anyBusy(),

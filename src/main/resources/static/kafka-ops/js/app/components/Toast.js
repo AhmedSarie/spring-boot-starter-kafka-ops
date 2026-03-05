@@ -24,7 +24,7 @@ var Toast = (function () {
 
     var component = {
         view: function () {
-            return m('.toast-container', toasts.map(function (t) {
+            return m('.toast-container', { role: 'alert', 'aria-live': 'polite' }, toasts.map(function (t) {
                 return m('.toast.toast-' + t.type + (t.exiting ? '.toast-exit' : ''),
                     { key: t.id }, t.message);
             }));

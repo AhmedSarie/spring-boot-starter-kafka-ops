@@ -78,11 +78,11 @@ public class KafkaOpsService {
   }
 
   @SneakyThrows
-  public KafkaPollResponse poll(String topic, int partition, long offset) {
+  public Optional<KafkaPollResponse> poll(String topic, int partition, long offset) {
     var entry = this.registry.find(topic);
     var consumer = entry.getValue();
     Optional<ConsumerRecord> consumerRecord = manualKafkaConsumer.poll(topic, partition, offset, consumer);
-    return consumerRecord.map(this::toKafkaPollResponse).orElse(null);
+    return consumerRecord.map(this::toKafkaPollResponse);
   }
 
   public KafkaOpsBatchResponse batchPoll(String topicName, Integer partition, Long startOffset,
