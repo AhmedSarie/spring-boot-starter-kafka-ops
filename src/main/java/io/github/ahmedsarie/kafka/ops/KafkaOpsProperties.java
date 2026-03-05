@@ -44,6 +44,11 @@ public class KafkaOpsProperties {
   public static class RestApi {
     private final boolean enabled;
     private final String retryEndpointUrl;
+    private final boolean exposeErrorDetails;
+
+    public RestApi(boolean enabled, String retryEndpointUrl) {
+      this(enabled, retryEndpointUrl, true);
+    }
   }
 
   @Getter

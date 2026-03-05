@@ -23,7 +23,9 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
 
   private static final String DEF_FACTORY_BEAN_NAME = "kafkaListenerContainerFactory";
+  private static final String METADATA_GROUP_ID_SUFFIX = "-metadata";
   private final Map<String, Map.Entry<KafkaOpsAwareConsumer, KafkaConsumer>> registryMap = new ConcurrentHashMap<>();
+  private final Map<String, KafkaConsumer> metadataConsumers = new ConcurrentHashMap<>();
   private final ListableBeanFactory beanFactory;
   private final String groupId;
   private final Function<Map<String, Object>, KafkaConsumer> consumerFactory;
@@ -54,13 +56,12 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
   }
 
   private KafkaOpsConsumerInfo buildTopicInfo(String topicName) {
-    var entry = registryMap.get(topicName);
-    if (entry == null) {
+    var metadataConsumer = metadataConsumers.get(topicName);
+    if (metadataConsumer == null) {
       return new KafkaOpsConsumerInfo(topicName, -1, -1);
     }
-    var kafkaConsumer = entry.getValue();
     try {
-      var partitionInfos = kafkaConsumer.partitionsFor(topicName);
+      var partitionInfos = metadataConsumer.partitionsFor(topicName);
       var partitionCount = partitionInfos != null ? partitionInfos.size() : 0;
       var topicPartitions = new ArrayList<TopicPartition>();
       for (int i = 0; i < partitionCount; i++) {
@@ -68,8 +69,8 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       }
       long messageCount = 0;
       if (!topicPartitions.isEmpty()) {
-        var endOffsets = kafkaConsumer.endOffsets(topicPartitions);
-        var beginningOffsets = kafkaConsumer.beginningOffsets(topicPartitions);
+        var endOffsets = metadataConsumer.endOffsets(topicPartitions);
+        var beginningOffsets = metadataConsumer.beginningOffsets(topicPartitions);
         for (var tp : topicPartitions) {
           var end = (Long) endOffsets.getOrDefault(tp, 0L);
           var begin = (Long) beginningOffsets.getOrDefault(tp, 0L);
@@ -103,20 +104,26 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       props.put("max.poll.records", 1);
       props.put("isolation.level", "read_uncommitted");
 
+      var metadataProps = new HashMap<>(props);
+      metadataProps.put("group.id", groupId + METADATA_GROUP_ID_SUFFIX);
+
       var mainTopicName = consumer.getTopic().getName();
       var mainKafkaConsumer = consumerFactory.apply(props);
       registryMap.put(mainTopicName, Map.entry(consumer, mainKafkaConsumer));
+      metadataConsumers.put(mainTopicName, consumerFactory.apply(metadataProps));
 
       if (consumer.getTopic().getDltTopic() != null) {
         var dltProps = new HashMap<>(props);
         var dltKafkaConsumer = consumerFactory.apply(dltProps);
         registryMap.put(consumer.getTopic().getDltTopic(), Map.entry(consumer, dltKafkaConsumer));
+        metadataConsumers.put(consumer.getTopic().getDltTopic(), consumerFactory.apply(metadataProps));
       }
 
       if (consumer.getTopic().getRetryTopic() != null) {
         var retryProps = new HashMap<>(props);
         var retryKafkaConsumer = consumerFactory.apply(retryProps);
         registryMap.put(consumer.getTopic().getRetryTopic(), Map.entry(consumer, retryKafkaConsumer));
+        metadataConsumers.put(consumer.getTopic().getRetryTopic(), consumerFactory.apply(metadataProps));
       }
     });
   }
@@ -124,6 +131,7 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
   @Override
   public void destroy() {
     registryMap.forEach((k, v) -> v.getValue().close());
+    metadataConsumers.forEach((k, v) -> v.close());
   }
 
   private Collection<KafkaOpsAwareConsumer> getConsumerBeans() {

@@ -3,6 +3,7 @@ package io.github.ahmedsarie.kafka.ops;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.springframework.beans.factory.ListableBeanFactory;
@@ -13,6 +14,8 @@ import org.springframework.kafka.core.KafkaTemplate;
 final class KafkaOpsFactoryUtils {
 
   private static final String DEF_FACTORY_BEAN_NAME = "kafkaListenerContainerFactory";
+  private static final Set<String> DENY_LIST_KEYS = Set.of(
+      "group.id", "key.deserializer", "value.deserializer", "client.id");
 
   private KafkaOpsFactoryUtils() {
   }
@@ -32,8 +35,7 @@ final class KafkaOpsFactoryUtils {
     var props = new HashMap<String, Object>();
     originalProps.forEach((k, v) -> {
       var key = String.valueOf(k);
-      if (key.startsWith("bootstrap.") || key.startsWith("security.")
-          || key.startsWith("sasl.") || key.startsWith("ssl.")) {
+      if (!DENY_LIST_KEYS.contains(key)) {
         props.put(key, v);
       }
     });

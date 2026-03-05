@@ -151,7 +151,6 @@ class KafkaOpsDltRouterTest {
     mockContainerFactory();
 
     var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
-    router.setKafkaTemplate(mockTemplate);
 
     // when
     router.afterPropertiesSet();
@@ -164,10 +163,11 @@ class KafkaOpsDltRouterTest {
   @Test
   @DisplayName("routeRecord sends record to retry topic with cycle header and acknowledges")
   @SuppressWarnings("unchecked")
-  void shouldRouteRecordToRetryTopic() {
+  void shouldRouteRecordToRetryTopic() throws Exception {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    injectMockTemplate(router, "orders");
     router.start("orders");
 
     var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
@@ -191,10 +191,11 @@ class KafkaOpsDltRouterTest {
   @Test
   @DisplayName("routeRecord skips and acknowledges when max cycles exceeded")
   @SuppressWarnings("unchecked")
-  void shouldSkipWhenMaxCyclesExceeded() {
+  void shouldSkipWhenMaxCyclesExceeded() throws Exception {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    injectMockTemplate(router, "orders");
     router.start("orders");
 
     var headers = new RecordHeaders();
@@ -215,10 +216,11 @@ class KafkaOpsDltRouterTest {
   @Test
   @DisplayName("routeRecord increments existing cycle count header")
   @SuppressWarnings("unchecked")
-  void shouldIncrementExistingCycleCount() {
+  void shouldIncrementExistingCycleCount() throws Exception {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    injectMockTemplate(router, "orders");
     router.start("orders");
 
     var headers = new RecordHeaders();
@@ -243,10 +245,11 @@ class KafkaOpsDltRouterTest {
   @Test
   @DisplayName("routeRecord stops container without acknowledging when record timestamp exceeds cutoff")
   @SuppressWarnings("unchecked")
-  void shouldStopContainerWhenRecordExceedsCutoffTimestamp() {
+  void shouldStopContainerWhenRecordExceedsCutoffTimestamp() throws Exception {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    injectMockTemplate(router, "orders");
     router.start("orders");
 
     // record timestamp far in the future (beyond any cutoff)
@@ -266,10 +269,11 @@ class KafkaOpsDltRouterTest {
   @Test
   @DisplayName("routeRecord throws RuntimeException and does not acknowledge when send fails")
   @SuppressWarnings("unchecked")
-  void shouldThrowWhenSendFails() {
+  void shouldThrowWhenSendFails() throws Exception {
     // prepare
     var router = buildRouterWithConsumer("orders", "orders.DLT", "orders-retry");
     router.afterPropertiesSet();
+    injectMockTemplate(router, "orders");
     router.start("orders");
 
     var record = new ConsumerRecord<>("orders.DLT", 0, 5L, 1000L, null, 0, 0,
@@ -323,8 +327,18 @@ class KafkaOpsDltRouterTest {
     mockContainerFactory();
 
     var router = new KafkaOpsDltRouter(beanFactory, properties, eventPublisher);
-    router.setKafkaTemplate(mockTemplate);
     return router;
+  }
+
+  @SuppressWarnings("unchecked")
+  private void injectMockTemplate(KafkaOpsDltRouter router, String mainTopic) throws Exception {
+    var routesField = KafkaOpsDltRouter.class.getDeclaredField("routes");
+    routesField.setAccessible(true);
+    var routes = (Map<String, Object>) routesField.get(router);
+    var state = routes.get(mainTopic);
+    var templateField = state.getClass().getDeclaredField("kafkaTemplate");
+    templateField.setAccessible(true);
+    templateField.set(state, mockTemplate);
   }
 
   private KafkaOpsAwareConsumer mockConsumer(String main, String dlt, String retry) {

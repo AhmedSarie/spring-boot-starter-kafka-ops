@@ -18,7 +18,6 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.util.ObjectUtils;
 
 @Slf4j
 @AutoConfiguration
@@ -29,16 +28,12 @@ import org.springframework.util.ObjectUtils;
 @AutoConfigureAfter(KafkaAutoConfiguration.class)
 public class KafkaOpsConfiguration {
 
-  private static final String DEFAULT_GROUP_ID = "kafka-ops-group-id";
   private final KafkaOpsProperties kafkaOpsProperties;
 
   @Bean
   @ConditionalOnMissingBean
   public KafkaOpsConsumerRegistry kafkaOpsConsumerRegistry(ListableBeanFactory listableBeanFactory) {
-    var groupId = ObjectUtils.isEmpty(kafkaOpsProperties.getGroupId())
-        ? DEFAULT_GROUP_ID
-        : kafkaOpsProperties.getGroupId();
-    return new KafkaOpsConsumerRegistry(listableBeanFactory, groupId, KafkaConsumer::new);
+    return new KafkaOpsConsumerRegistry(listableBeanFactory, kafkaOpsProperties.getGroupId(), KafkaConsumer::new);
   }
 
   @Bean

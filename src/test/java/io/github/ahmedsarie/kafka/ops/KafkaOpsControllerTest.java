@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import io.github.ahmedsarie.kafka.ops.KafkaOpsService.NoConsumerFoundException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(KafkaOpsController.class)
-@ContextConfiguration(classes = KafkaOpsController.class)
+@ContextConfiguration(classes = {KafkaOpsController.class, KafkaOpsControllerAdvice.class})
 class KafkaOpsControllerTest {
 
   private static final String RETRY_CONSUMER_API_URI = "/operational/consumer-retries";
@@ -44,6 +45,9 @@ class KafkaOpsControllerTest {
 
   @MockBean
   private KafkaOpsService service;
+
+  @MockBean
+  private KafkaOpsProperties kafkaOpsProperties;
 
   @MockBean
   private KafkaOpsDltRouter dltRouter;
@@ -149,7 +153,7 @@ class KafkaOpsControllerTest {
     //prepare
     var pollResponse = new KafkaPollResponse("junit", "key-1", 0, 0L, 1709251200000L,
         Map.of("traceid", "abc-123"));
-    when(service.poll(anyString(), anyInt(), anyLong())).thenReturn(pollResponse);
+    when(service.poll(anyString(), anyInt(), anyLong())).thenReturn(Optional.of(pollResponse));
 
     // when
     this.mockMvc.perform(
@@ -169,17 +173,17 @@ class KafkaOpsControllerTest {
 
   @Test
   @SneakyThrows
-  @DisplayName("should poll successfully when nothing found")
-  void shouldPollSuccessfullyWhenNothingFound() {
+  @DisplayName("should return 204 when poll finds nothing")
+  void shouldReturn204WhenPollFindsNothing() {
 
     //prepare
-    when(service.poll(anyString(), anyInt(), anyLong())).thenReturn(null);
+    when(service.poll(anyString(), anyInt(), anyLong())).thenReturn(Optional.empty());
 
     // when
     this.mockMvc.perform(
             get(RETRY_CONSUMER_API_URI + "?topicName=test-topic&partition=0&offset=0").contentType(MediaType.APPLICATION_JSON_VALUE))
         .andDo(print())
-        .andExpect(status().isOk());
+        .andExpect(status().isNoContent());
 
     verify(service).poll("test-topic", 0, 0L);
   }
@@ -285,6 +289,19 @@ class KafkaOpsControllerTest {
         .andDo(print())
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.message").value("Provide either partition+startOffset or startTimestamp, not both"));
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("batch poll should return 400 when partition provided without startOffset alongside timestamp")
+  void shouldReturn400WhenPartitionWithoutStartOffset() {
+
+    // when
+    this.mockMvc.perform(get(RETRY_CONSUMER_API_URI
+            + "/batch?topicName=test-topic&partition=0&startTimestamp=1000&limit=10"))
+        .andDo(print())
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("partition and startOffset must both be provided"));
   }
 
   @Test
@@ -398,5 +415,36 @@ class KafkaOpsControllerTest {
         .andDo(print())
         .andExpect(status().is5xxServerError())
         .andExpect(jsonPath("$.message").value("kafka broker down"));
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("poll should return 400 for invalid topic name")
+  void shouldReturn400ForInvalidTopicNameOnPoll() {
+
+    // when
+    this.mockMvc.perform(
+            get(RETRY_CONSUMER_API_URI + "?topicName=invalid%0Atopic&partition=0&offset=0"))
+        .andDo(print())
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("Invalid topic name: must match [a-zA-Z0-9._-]+"));
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("should return 500 with masked message when exposeErrorDetails is false")
+  void shouldMaskErrorDetailsWhenExposeFalse() {
+
+    // prepare
+    var restApi = new KafkaOpsProperties.RestApi(true, "retry-uri", false);
+    when(kafkaOpsProperties.getRestApi()).thenReturn(restApi);
+    doThrow(new RuntimeException("sensitive info")).when(service).retry(any());
+
+    // when
+    this.mockMvc.perform(post(RETRY_CONSUMER_API_URI).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"topic\":\"test-topic\", \"partition\":0, \"offset\":0}"))
+        .andDo(print())
+        .andExpect(status().is5xxServerError())
+        .andExpect(jsonPath("$.message").value("Internal server error"));
   }
 }

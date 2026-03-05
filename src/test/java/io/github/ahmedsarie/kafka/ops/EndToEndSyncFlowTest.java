@@ -120,9 +120,9 @@ class EndToEndSyncFlowTest {
       // then
       logAssert.assertLog("polled consumer record successfully. reprocess!", 20);
       var poll = service.poll(TEST_TOPIC_NAME, sentPartition, sentOffset);
-      assertNotNull(poll);
-      assertTrue(poll.getConsumerRecordValue().contains(consumeResult.get(counter).value().getName()));
-      assertTrue(poll.getConsumerRecordValue().contains(consumeResult.get(counter).value().getDesc()));
+      assertTrue(poll.isPresent());
+      assertTrue(poll.get().getConsumerRecordValue().contains(consumeResult.get(counter).value().getName()));
+      assertTrue(poll.get().getConsumerRecordValue().contains(consumeResult.get(counter).value().getDesc()));
       counter++;
     }
   }

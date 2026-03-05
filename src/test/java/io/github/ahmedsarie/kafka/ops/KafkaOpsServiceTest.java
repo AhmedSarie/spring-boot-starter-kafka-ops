@@ -188,20 +188,20 @@ class KafkaOpsServiceTest {
         Optional.of(consumerRecord));
 
     // when
-    KafkaPollResponse poll = service.poll(topic, partition, offset);
+    var poll = service.poll(topic, partition, offset);
 
     // then
-    assertNotNull(poll);
-    assertEquals(result, poll.getConsumerRecordValue());
-    assertEquals("anything", poll.getKey());
-    assertEquals(0, poll.getPartition());
-    assertEquals(0L, poll.getOffset());
-    assertEquals("abc-123", poll.getHeaders().get("traceid"));
+    assertTrue(poll.isPresent());
+    assertEquals(result, poll.get().getConsumerRecordValue());
+    assertEquals("anything", poll.get().getKey());
+    assertEquals(0, poll.get().getPartition());
+    assertEquals(0L, poll.get().getOffset());
+    assertEquals("abc-123", poll.get().getHeaders().get("traceid"));
   }
 
   @Test
-  @DisplayName("should return null when ConsumerRecord is empty")
-  void testPollNullScenario() {
+  @DisplayName("should return empty Optional when ConsumerRecord is empty")
+  void testPollEmptyScenario() {
     // prepare
     int partition = 0;
     long offset = 0L;
@@ -210,10 +210,10 @@ class KafkaOpsServiceTest {
     when(manualKafkaConsumerMock.poll(eq(topic), eq(partition), eq(offset), any())).thenReturn(Optional.empty());
 
     // when
-    KafkaPollResponse poll = service.poll(topic, partition, offset);
+    var poll = service.poll(topic, partition, offset);
 
     // then
-    assertNull(poll);
+    assertTrue(poll.isEmpty());
   }
 
   @Test
@@ -294,9 +294,9 @@ class KafkaOpsServiceTest {
     var poll = service.poll(topic, 0, 0L);
 
     // then
-    assertNotNull(poll);
-    assertEquals("abc", poll.getHeaders().get("traceid"));
-    assertNull(poll.getHeaders().get("kafka_dlt-exception-stacktrace"));
+    assertTrue(poll.isPresent());
+    assertEquals("abc", poll.get().getHeaders().get("traceid"));
+    assertNull(poll.get().getHeaders().get("kafka_dlt-exception-stacktrace"));
   }
 
   @Test
@@ -315,9 +315,9 @@ class KafkaOpsServiceTest {
     var poll = service.poll(topic, 0, 0L);
 
     // then
-    assertNotNull(poll);
-    assertEquals("42", poll.getHeaders().get("kafka_dlt-original-offset"));
-    assertEquals("1700000000000", poll.getHeaders().get("kafka_dlt-original-timestamp"));
+    assertTrue(poll.isPresent());
+    assertEquals("42", poll.get().getHeaders().get("kafka_dlt-original-offset"));
+    assertEquals("1700000000000", poll.get().getHeaders().get("kafka_dlt-original-timestamp"));
   }
 
   @Test
@@ -335,8 +335,8 @@ class KafkaOpsServiceTest {
     var poll = service.poll(topic, 0, 0L);
 
     // then
-    assertNotNull(poll);
-    assertEquals("3", poll.getHeaders().get("kafka_dlt-original-partition"));
+    assertTrue(poll.isPresent());
+    assertEquals("3", poll.get().getHeaders().get("kafka_dlt-original-partition"));
   }
 
   private static Stream<Arguments> messages() {
