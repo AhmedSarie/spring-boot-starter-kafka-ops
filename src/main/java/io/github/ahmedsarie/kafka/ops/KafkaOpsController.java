@@ -6,7 +6,6 @@ import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -27,7 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnProperty(value = "kafka.ops.rest-api.enabled", havingValue = "true")
 class KafkaOpsController {
 
-  private static final Pattern TOPIC_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9._-]+$");
   private static final int MAX_PAYLOAD_SIZE = 1_048_576;
 
   private final KafkaOpsService kafkaOpsService;
@@ -59,7 +57,7 @@ class KafkaOpsController {
   public ResponseEntity<?> poll(
       @RequestParam String topicName, @RequestParam int partition, @RequestParam long offset
   ) {
-    validateTopicName(topicName);
+
     log.info(format("Polling started for topic=%s - partition=%d - offset=%d", topicName, partition, offset));
     try {
       var result = kafkaOpsService.poll(topicName, partition, offset);
@@ -80,7 +78,7 @@ class KafkaOpsController {
       @RequestParam(required = false) Long startTimestamp,
       @RequestParam(defaultValue = "10") int limit
   ) {
-    validateTopicName(topicName);
+
     log.info(format("Batch poll started for topic=%s", topicName));
     try {
       var hasTimestamp = startTimestamp != null;
@@ -103,7 +101,7 @@ class KafkaOpsController {
 
   @PostMapping("/corrections/{kafka_topic}")
   public ResponseEntity<?> correct(@RequestBody String payload, @PathVariable("kafka_topic") String kafkaTopic) {
-    validateTopicName(kafkaTopic);
+
     if (payload.length() > MAX_PAYLOAD_SIZE) {
       throw new IllegalArgumentException("Payload size exceeds maximum allowed size of " + MAX_PAYLOAD_SIZE + " bytes");
     }
@@ -121,7 +119,6 @@ class KafkaOpsController {
 
   @PostMapping("/dlt-routing/{topic}/start")
   public ResponseEntity<?> startDltRouting(@PathVariable("topic") String topic) {
-    validateTopicName(topic);
     var id = UUID.randomUUID().toString();
     MDC.put("api-response-id", id);
     try {
@@ -136,12 +133,6 @@ class KafkaOpsController {
     } finally {
       log.info("DLT routing request finished");
       MDC.clear();
-    }
-  }
-
-  private static void validateTopicName(String topic) {
-    if (topic == null || !TOPIC_NAME_PATTERN.matcher(topic).matches()) {
-      throw new IllegalArgumentException("Invalid topic name: must match [a-zA-Z0-9._-]+");
     }
   }
 }

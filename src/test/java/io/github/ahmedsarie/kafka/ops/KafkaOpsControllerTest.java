@@ -419,19 +419,6 @@ class KafkaOpsControllerTest {
 
   @Test
   @SneakyThrows
-  @DisplayName("poll should return 400 for invalid topic name")
-  void shouldReturn400ForInvalidTopicNameOnPoll() {
-
-    // when
-    this.mockMvc.perform(
-            get(RETRY_CONSUMER_API_URI + "?topicName=invalid%0Atopic&partition=0&offset=0"))
-        .andDo(print())
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("Invalid topic name: must match [a-zA-Z0-9._-]+"));
-  }
-
-  @Test
-  @SneakyThrows
   @DisplayName("should return 500 with masked message when exposeErrorDetails is false")
   void shouldMaskErrorDetailsWhenExposeFalse() {
 
