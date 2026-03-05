@@ -1,5 +1,7 @@
 /* Consumer sidebar component — tree view with DLT/retry sub-topics */
 var Sidebar = {
+    confirmDrain: null, /* { mainTopicName, dltName } when modal is open */
+
     oninit: function () {
         var load = Api.basePath ? Promise.resolve() : Api.init();
         load.then(function () {
@@ -73,23 +75,7 @@ var Sidebar = {
                     title: 'Drain DLT — reprocess all messages',
                     onclick: function (e) {
                         e.stopPropagation();
-                        if (!window.confirm('Are you sure you want to drain DLT messages for "' + dlt.name + '" back to the retry topic?')) return;
-                        Api.startDltRouting(mainTopicName).then(function (data) {
-                            var id = data && data.id ? data.id.slice(0, 8) + '...' : '';
-                            Toast.success('DLT drain started' + (id ? ' — ID: ' + id : ''));
-                            /* Refresh sidebar to update counts */
-                            Api.getConsumers().then(function (d) {
-                                if (Array.isArray(d)) {
-                                    AppState.consumers = d.sort(function (a, b) {
-                                        var nameA = (typeof a === 'string') ? a : (a.name || '');
-                                        var nameB = (typeof b === 'string') ? b : (b.name || '');
-                                        return nameA.localeCompare(nameB);
-                                    });
-                                }
-                            });
-                        }).catch(function (err) {
-                            Toast.error('DLT drain failed: ' + Api.extractError(err));
-                        });
+                        Sidebar.confirmDrain = { mainTopicName: mainTopicName, dltName: dlt.name };
                     }
                 }, [
                     m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>'),
@@ -193,7 +179,33 @@ var Sidebar = {
                         m('span.dlt-config-item', 'Idle stop: ' + AppState.dltRouting.idleShutdownSeconds + 's')
                     ])
                     : null
-            ])
+            ]),
+
+            Sidebar.confirmDrain ? m(ConfirmModal, {
+                title: 'Drain DLT',
+                message: 'Are you sure you want to drain DLT messages for "' + Sidebar.confirmDrain.dltName + '" back to the retry topic?',
+                confirmLabel: 'Drain',
+                onCancel: function () { Sidebar.confirmDrain = null; },
+                onConfirm: function () {
+                    var topic = Sidebar.confirmDrain.mainTopicName;
+                    Sidebar.confirmDrain = null;
+                    Api.startDltRouting(topic).then(function (data) {
+                        var id = data && data.id ? data.id.slice(0, 8) + '...' : '';
+                        Toast.success('DLT drain started' + (id ? ' — ID: ' + id : ''));
+                        Api.getConsumers().then(function (d) {
+                            if (Array.isArray(d)) {
+                                AppState.consumers = d.sort(function (a, b) {
+                                    var nameA = (typeof a === 'string') ? a : (a.name || '');
+                                    var nameB = (typeof b === 'string') ? b : (b.name || '');
+                                    return nameA.localeCompare(nameB);
+                                });
+                            }
+                        });
+                    }).catch(function (err) {
+                        Toast.error('DLT drain failed: ' + Api.extractError(err));
+                    });
+                }
+            }) : null
         ]);
     }
 };
