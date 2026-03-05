@@ -1,6 +1,7 @@
 /* Collapsible JSON tree viewer component */
 var JsonViewer = (function () {
     var collapsed = {};
+    var lastInstanceKey = null;
 
     function toggle(path) {
         collapsed[path] = !collapsed[path];
@@ -86,11 +87,12 @@ var JsonViewer = (function () {
     }
 
     return {
-        oninit: function () {
-            collapsed = {};
-        },
-
         view: function (vnode) {
+            var instanceKey = vnode.attrs.instanceKey || null;
+            if (instanceKey !== lastInstanceKey) {
+                collapsed = {};
+                lastInstanceKey = instanceKey;
+            }
             var data = vnode.attrs.data;
             if (!data) return null;
 

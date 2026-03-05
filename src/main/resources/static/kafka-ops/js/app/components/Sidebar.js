@@ -73,6 +73,7 @@ var Sidebar = {
                     title: 'Drain DLT — reprocess all messages',
                     onclick: function (e) {
                         e.stopPropagation();
+                        if (!window.confirm('Are you sure you want to drain DLT messages for "' + dlt.name + '" back to the retry topic?')) return;
                         Api.startDltRouting(mainTopicName).then(function (data) {
                             var id = data && data.id ? data.id.slice(0, 8) + '...' : '';
                             Toast.success('DLT drain started' + (id ? ' — ID: ' + id : ''));

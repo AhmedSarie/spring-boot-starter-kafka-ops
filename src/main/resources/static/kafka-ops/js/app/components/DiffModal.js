@@ -1,6 +1,8 @@
 /* Flat-diff confirmation modal for corrections */
 var DiffModal = (function () {
 
+    var previousFocus = null;
+
     /* Flatten a JSON object to dot-notation key-value pairs */
     function flatten(obj, prefix) {
         var result = {};
@@ -81,7 +83,25 @@ var DiffModal = (function () {
         return { changed: changed, added: added, removed: removed };
     }
 
+    function closeAndRestoreFocus(onCancel) {
+        onCancel();
+        if (previousFocus) previousFocus.focus();
+        previousFocus = null;
+    }
+
     return {
+        oninit: function () {
+            previousFocus = document.activeElement;
+        },
+
+        oncreate: function (vnode) {
+            var modal = vnode.dom.querySelector('.diff-modal');
+            if (modal) {
+                var focusable = modal.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+                if (focusable.length) focusable[0].focus();
+            }
+        },
+
         view: function (vnode) {
             var original = vnode.attrs.original;
             var edited = vnode.attrs.edited;
@@ -93,10 +113,34 @@ var DiffModal = (function () {
                 ? diff.changed.length + diff.added.length + diff.removed.length
                 : 0;
 
-            return m('.diff-overlay', { onclick: onCancel }, [
+            return m('.diff-overlay', {
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': 'Correction diff review',
+                onclick: function () { closeAndRestoreFocus(onCancel); }
+            }, [
                 m('.diff-modal', {
                     onclick: function (e) { e.stopPropagation(); },
-                    onkeydown: function (e) { if (e.key === 'Escape') onCancel(); }
+                    onkeydown: function (e) {
+                        if (e.key === 'Escape') {
+                            closeAndRestoreFocus(onCancel);
+                            return;
+                        }
+                        if (e.key === 'Tab') {
+                            var modal = e.currentTarget;
+                            var focusable = modal.querySelectorAll('button, [tabindex]:not([tabindex="-1"])');
+                            if (focusable.length === 0) return;
+                            var first = focusable[0];
+                            var last = focusable[focusable.length - 1];
+                            if (e.shiftKey && document.activeElement === first) {
+                                e.preventDefault();
+                                last.focus();
+                            } else if (!e.shiftKey && document.activeElement === last) {
+                                e.preventDefault();
+                                first.focus();
+                            }
+                        }
+                    }
                 }, [
                     m('.diff-modal-header', 'Review Changes Before Sending'),
 
