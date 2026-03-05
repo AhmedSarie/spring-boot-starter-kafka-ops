@@ -1,6 +1,5 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import org.apache.avro.Schema;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
@@ -17,14 +16,6 @@ public interface KafkaOpsAwareConsumer<K, T> {
   TopicConfig getTopic();
 
   default ContainerConfig getContainer() {
-    return null;
-  }
-
-  /**
-   * @deprecated Use {@link #getValueCodec()} with {@link AvroValueCodec} instead.
-   */
-  @Deprecated(forRemoval = true)
-  default Schema getSchema() {
     return null;
   }
 

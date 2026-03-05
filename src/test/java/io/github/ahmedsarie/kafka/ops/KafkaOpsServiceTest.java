@@ -143,26 +143,6 @@ class KafkaOpsServiceTest {
   }
 
   @Test
-  @DisplayName("process should succeed with deprecated getSchema() for backward compatibility")
-  void testProcessWithDeprecatedSchemaBackwardCompat() {
-    // prepare
-    var avroJsonMsg = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
-    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
-    when(contractMock.getSchema()).thenReturn(TestRecord.getClassSchema());
-    when(registry.find(topic)).thenReturn(entry);
-
-    // when
-    service.process(topic, avroJsonMsg);
-
-    // then
-    verify(contractMock).consume(argThat(arg -> {
-      boolean isTestRecord = arg.value() instanceof TestRecord;
-      var value = (TestRecord) arg.value();
-      return isTestRecord && value.getName().equals("junit");
-    }));
-  }
-
-  @Test
   @DisplayName("process should succeed when a Proto consumer uses ValueCodec for corrections")
   void testProcessWithProtoValueCodecHappyScenario() {
     // prepare — Struct well-known type JSON is a plain JSON object
@@ -412,6 +392,48 @@ class KafkaOpsServiceTest {
     // then
     assertTrue(poll.isPresent());
     assertEquals("{\"name\":\"junit\",\"desc\":\"serialise!\"}", poll.get().getConsumerRecordValue());
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  @Test
+  @DisplayName("Poll auto-detects Avro key without codec")
+  void testPollAutoDetectsAvroKey() {
+    // prepare
+    var avroKey = TestRecord.newBuilder().setName("key-name").setDesc("key-desc").build();
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    when(registry.find(topic)).thenReturn(entry);
+    ConsumerRecord consumerRecord = new ConsumerRecord(topic, 0, 0L, avroKey, "string-value");
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(consumerRecord));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertTrue(poll.isPresent());
+    assertTrue(poll.get().getKey().contains("key-name"));
+    assertTrue(poll.get().getKey().contains("key-desc"));
+    assertEquals("string-value", poll.get().getConsumerRecordValue());
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  @Test
+  @DisplayName("Poll auto-detects Proto key without codec")
+  void testPollAutoDetectsProtoKey() {
+    // prepare
+    var protoKey = com.google.protobuf.Struct.newBuilder()
+        .putFields("id", com.google.protobuf.Value.newBuilder().setStringValue("abc-123").build())
+        .build();
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    when(registry.find(topic)).thenReturn(entry);
+    ConsumerRecord consumerRecord = new ConsumerRecord(topic, 0, 0L, protoKey, "string-value");
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(consumerRecord));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertTrue(poll.isPresent());
+    assertTrue(poll.get().getKey().contains("abc-123"));
   }
 
   @Test
