@@ -32,18 +32,17 @@ The review covers all production code on the `feature/adr-002-wave-1` branch at 
 
 #### Concerns
 
-| Severity | Issue | Location | Detail |
-|----------|-------|----------|--------|
-| **High** | Duplicate `DEFAULT_GROUP_ID` with different values | `KafkaOpsConfiguration:32` vs `KafkaOpsProperties:13` | `"kafka-ops-group-id"` vs `"default-ops-group-id"` — effective default depends on code path, which is confusing and likely a bug |
-| **High** | `poll()` returns `null` instead of 404/204 | `KafkaOpsService:85` | `.orElse(null)` causes `200 OK` with `null` body when no record found — misleading |
-| **High** | Potential NPE in batch poll validation | `KafkaOpsController:99` | If only `partition` is provided without `startOffset`, the XOR check passes and `startOffset` is null-unboxed in the service layer |
-| Medium | Boilerplate try/catch/finally in every controller method | `KafkaOpsController:35-163` | Six methods all follow identical pattern — cross-cutting concern should be extracted |
-| Medium | Raw types throughout | `KafkaOpsConsumerRegistry:26`, `KafkaOpsService:58,71,84` | Raw `KafkaOpsAwareConsumer`, `KafkaConsumer`, `ConsumerRecord` — loses type safety, generates compiler warnings |
-| Medium | No DLT routing stop endpoint | `KafkaOpsController:137-163` | `POST /start` exists but no `POST /stop` — only way to stop is idle timeout |
-| Medium | `@ComponentScan` in autoconfiguration | `KafkaOpsConfiguration:27` | Can pick up unintended beans from the same package in consuming applications — prefer explicit `@Bean` or `@Import` |
-| Medium | Corrections create fake `ConsumerRecord` | `KafkaOpsService:58-61` | Synthesized with `partition=0, offset=0` — could produce incorrect behavior if consumer uses partition/offset for idempotency |
-| Low | `hasMore` heuristic is imprecise | `KafkaOpsService:105` | Returns true when batch size == limit, even if no more records exist |
-| Low | Duplicate `DEFAULT_RETRY_ENDPOINT_URL` | `KafkaOpsConsoleController:21` | Also defined in controller annotation SpEL default — out-of-sync risk |
+| Severity | Issue                                                    | Location                                                  | Detail                                                                                                                             |
+|----------|----------------------------------------------------------|-----------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| **High** | Duplicate `DEFAULT_GROUP_ID` with different values       | `KafkaOpsConfiguration:32` vs `KafkaOpsProperties:13`     | `"kafka-ops-group-id"` vs `"default-ops-group-id"` — effective default depends on code path, which is confusing and likely a bug   |
+| **High** | `poll()` returns `null` instead of 404/204               | `KafkaOpsService:85`                                      | `.orElse(null)` causes `200 OK` with `null` body when no record found — misleading                                                 |
+| **High** | Potential NPE in batch poll validation                   | `KafkaOpsController:99`                                   | If only `partition` is provided without `startOffset`, the XOR check passes and `startOffset` is null-unboxed in the service layer |
+| Medium   | Boilerplate try/catch/finally in every controller method | `KafkaOpsController:35-163`                               | Six methods all follow identical pattern — cross-cutting concern should be extracted                                               |
+| Medium   | Raw types throughout                                     | `KafkaOpsConsumerRegistry:26`, `KafkaOpsService:58,71,84` | Raw `KafkaOpsAwareConsumer`, `KafkaConsumer`, `ConsumerRecord` — loses type safety, generates compiler warnings                    |
+| Medium   | `@ComponentScan` in autoconfiguration                    | `KafkaOpsConfiguration:27`                                | Can pick up unintended beans from the same package in consuming applications — prefer explicit `@Bean` or `@Import`                |
+| Medium   | Corrections create fake `ConsumerRecord`                 | `KafkaOpsService:58-61`                                   | Synthesized with `partition=0, offset=0` — could produce incorrect behavior if consumer uses partition/offset for idempotency      |
+| Low      | `hasMore` heuristic is imprecise                         | `KafkaOpsService:105`                                     | Returns true when batch size == limit, even if no more records exist                                                               |
+| Low      | Duplicate `DEFAULT_RETRY_ENDPOINT_URL`                   | `KafkaOpsConsoleController:21`                            | Also defined in controller annotation SpEL default — out-of-sync risk                                                              |
 
 #### Recommendations
 
@@ -53,14 +52,13 @@ The review covers all production code on the `feature/adr-002-wave-1` branch at 
 3. Add explicit null checks in batch poll — validate that `partition` and `startOffset` are both present or both absent
 
 **P1 — API Quality**
-4. Add a `POST /dlt-routing/{topic}/stop` endpoint for operational control
-5. Extract repeated try/catch/MDC pattern into a servlet `Filter` or `@ControllerAdvice`
-6. Type the `ResponseEntity` return values or add OpenAPI annotations
+4. Extract repeated try/catch/MDC pattern into a `@ControllerAdvice(assignableTypes = KafkaOpsController.class)` — scoped to the library's controller only, so the host application's exception handling is unaffected
+5. Type the `ResponseEntity` return values or add OpenAPI annotations
 
 **P2 — Maintainability**
-7. Eliminate raw types — add type parameters to `KafkaOpsAwareConsumer`, `KafkaConsumer`, and `ConsumerRecord` references
-8. Replace `@ComponentScan` with explicit `@Import` or `@Bean` declarations
-9. Consolidate duplicated constants into a single location
+6. Eliminate raw types — add type parameters to `KafkaOpsAwareConsumer`, `KafkaConsumer`, and `ConsumerRecord` references
+7. Replace `@ComponentScan` with explicit `@Import` or `@Bean` declarations
+8. Consolidate duplicated constants into a single location
 
 ---
 
@@ -77,32 +75,35 @@ The review covers all production code on the `feature/adr-002-wave-1` branch at 
 
 #### Concerns
 
-| Severity | Issue | Location | Detail |
-|----------|-------|----------|--------|
-| **High** | `KafkaConsumer` used without synchronization in `getConsumerDetails()` | `KafkaOpsConsumerRegistry:56-84` | Calls `partitionsFor()`, `endOffsets()`, `beginningOffsets()` on shared `KafkaConsumer` instances while `ManualKafkaConsumer` synchronizes on a different lock. Concurrent `/consumers` call during a poll will cause `ConcurrentModificationException` |
-| **High** | Global lock on `ManualKafkaConsumer` serializes all topics | `ManualKafkaConsumer:28,38,49` | All poll methods `synchronized` on `this` — two concurrent requests for different topics block each other unnecessarily |
-| Medium | `extractConnectionProps` may miss required connection properties | `KafkaOpsFactoryUtils:33-39` | Allow-list only copies `bootstrap.`, `security.`, `sasl.`, `ssl.` prefixes — misses `client.dns.lookup`, `retry.*`, `reconnect.*`, custom interceptors |
-| Medium | Silent fallback on malformed cycle header | `KafkaOpsDltRouter:192-203` | `NumberFormatException` caught and defaults to 0 — could allow extra routing cycles if header is corrupted |
-| Medium | Buffered records after cutoff stop | `KafkaOpsDltRouter:160-164` | After `container.stop()`, already-fetched records in the internal buffer continue to be delivered — may produce redundant stop log lines |
-| Low | DLT router creates shared `KafkaTemplate` from first consumer's props | `KafkaOpsDltRouter:61-63` | Multi-cluster consumers would route DLT messages through the wrong cluster's producer |
-| Low | Concurrency=1 hardcoded for DLT containers | `KafkaOpsDltRouter:140` | Multi-partition DLT topics processed by single thread — fine for typical low-volume DLT, but slow for high-volume scenarios |
-| Low | At-least-once semantics not documented | `KafkaOpsDltRouter:180-188` | Crash between successful send and ack causes re-routing on restart — consumers on retry topic must be idempotent |
+| Severity | Issue                                                                  | Location                         | Detail                                                                                                                                                                                                                                                                                     |
+|----------|------------------------------------------------------------------------|----------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **High** | `KafkaConsumer` used without synchronization in `getConsumerDetails()` | `KafkaOpsConsumerRegistry:56-84` | Calls `partitionsFor()`, `endOffsets()`, `beginningOffsets()` on shared `KafkaConsumer` instances while `ManualKafkaConsumer` synchronizes on a different lock. Concurrent `/consumers` call during a poll will cause `ConcurrentModificationException`                                    |
+| **High** | Global lock on `ManualKafkaConsumer` serializes all topics             | `ManualKafkaConsumer:28,38,49`   | All poll methods `synchronized` on `this` — two concurrent requests for different topics block each other unnecessarily                                                                                                                                                                    |
+| Medium   | `extractConnectionProps` uses allow-list that may miss properties      | `KafkaOpsFactoryUtils:33-39`     | Only copies `bootstrap.`, `security.`, `sasl.`, `ssl.` prefixes — misses `client.dns.lookup`, `retry.*`, `reconnect.*`, custom interceptors. Should copy all properties and override only `group.id` and deserializer configs                                                              |
+| Medium   | Silent fallback on malformed cycle header                              | `KafkaOpsDltRouter:192-203`      | `NumberFormatException` caught and defaults to 0 — could allow extra routing cycles if header is corrupted                                                                                                                                                                                 |
+| Medium   | DLT router creates shared `KafkaTemplate` from first consumer's props  | `KafkaOpsDltRouter:61-63`        | The library already supports multi-cluster via `getContainerName()`. The DLT router should follow the same pattern — create a per-route `KafkaTemplate` using the same container factory's connection properties as the consumer's declared container, falling back to the default factory |
+| Low      | Concurrency=1 hardcoded for DLT containers                             | `KafkaOpsDltRouter:140`          | Multi-partition DLT topics processed by single thread — fine for typical low-volume DLT, but slow for high-volume scenarios                                                                                                                                                                |
+| Low      | At-least-once semantics not documented                                 | `KafkaOpsDltRouter:180-188`      | Crash between successful send and ack causes re-routing on restart — consumers on retry topic must be idempotent                                                                                                                                                                           |
 
 #### Recommendations
 
 **P1 — Fix thread-safety of `KafkaConsumer` in `getConsumerDetails()`**
-Either create dedicated `KafkaConsumer` instances for metadata queries, or synchronize `getConsumerDetails()` through the same lock as `ManualKafkaConsumer`. This is a real concurrency bug that will manifest when the UI calls `/consumers` while poll/retry operations are in progress.
+Create dedicated `KafkaConsumer` instances for metadata queries (`partitionsFor`, `endOffsets`, `beginningOffsets`). These consumers are lightweight when idle — just a TCP connection to the broker. This cleanly separates metadata queries from polling without shared-lock complexity.
 
 **P2 — Switch from global lock to per-consumer lock**
 Replace `synchronized` on the method with `synchronized(kafkaConsumer)` to allow concurrent operations on different topics. Simple change with significant throughput improvement.
 
-**P3 — Broaden `extractConnectionProps` property filter**
-Switch to a deny-list approach (exclude `group.id`, deserializer configs) or add commonly needed prefixes (`client.`, `retry.`, `reconnect.`). Document which properties are forwarded.
+**P3 — Switch `extractConnectionProps` from allow-list to deny-list**
+Copy all properties from the consumer factory and override only `group.id` and deserializer configs (`key.deserializer`, `value.deserializer`). This ensures cloud-specific properties (`client.dns.lookup`), retry/reconnect settings, and custom interceptors are inherited automatically.
 
 **P4 — Change malformed cycle header fallback**
 Default to `maxCycles - 1` (conservative) instead of 0, and log at ERROR.
 
-**P5 — Document at-least-once semantics and single-cluster assumption**
+**P5 — Per-route `KafkaTemplate` for multi-cluster DLT routing**
+The library already supports multi-cluster via `getContainerName()`. The DLT router should follow the same pattern: create a `KafkaTemplate` per route using the same container factory's connection properties as the consumer's declared container, falling back to the default factory. This ensures DLT and retry topics are always on the same cluster as the original topic.
+
+**P6 — Document at-least-once semantics**
+Add a note in README that DLT routing provides at-least-once delivery, and consumers on the retry topic should be idempotent.
 
 ---
 
@@ -119,19 +120,19 @@ Default to `maxCycles - 1` (conservative) instead of 0, and log at ERROR.
 
 #### Concerns
 
-| Severity | Issue | Location | Detail |
-|----------|-------|----------|--------|
-| **High** | DiffModal has no focus trap | `DiffModal.js:96-177` | Focus not moved into modal on open, Tab escapes behind overlay, no `aria-modal`, no `role="dialog"`, no focus restoration on close |
-| **High** | No confirmation for "Drain DLT" action | `Sidebar.js:72-97` | Clicking "Drain" immediately fires `Api.startDltRouting()` with no confirm step — reprocesses ALL DLT messages |
-| **High** | Toast notifications not announced to screen readers | `Toast.js` | `.toast-container` has no `role="alert"` or `aria-live="polite"` |
-| Medium | ~100 lines of duplicated logic between views | `PollView.js:76-121`, `BrowseView.js:154-199` | Correction editor, retry logic, `formatTimestamp`, `anyBusy`, JSON error handling all duplicated |
-| Medium | `JsonViewer` collapsed state is global | `JsonViewer.js:3` | Module-level `collapsed` object shared across all viewer instances — toggling in one view affects another |
-| Medium | `expandedIndex` is fragile | `BrowseView.js:14,130-140` | Integer index into filtered results — "Load More" appending records shifts which row is expanded. Should use `partition:offset` composite key |
-| Medium | Correction targets selected topic, not record's original topic | `BrowseView.js:190` | Browsing a DLT topic and editing sends correction to DLT topic, not original topic |
-| Medium | No mobile/tablet breakpoints | `app.css` | No `@media` queries; sidebar fixed at `20rem`; browse table unusable on small screens |
-| Low | Sidebar DLT item clickable area inconsistent | `Sidebar.js:57-98` | Only inner `.consumer-item-label` triggers navigation, not the container — breaks listbox contract |
-| Low | `m.trust()` scattered for SVG icons | Throughout all components | Safe (hardcoded), but should be centralized into a shared `Icons` object |
-| Low | Direct DOM access in `openEditor` | `PollView.js:85-87`, `BrowseView.js:162-165` | `document.querySelector` with `setTimeout` — should use Mithril's `oncreate` lifecycle |
+| Severity | Issue                                                          | Location                                      | Detail                                                                                                                                        |
+|----------|----------------------------------------------------------------|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+| **High** | DiffModal has no focus trap                                    | `DiffModal.js:96-177`                         | Focus not moved into modal on open, Tab escapes behind overlay, no `aria-modal`, no `role="dialog"`, no focus restoration on close            |
+| **High** | No confirmation for "Drain DLT" action                         | `Sidebar.js:72-97`                            | Clicking "Drain" immediately fires `Api.startDltRouting()` with no confirm step — reprocesses ALL DLT messages                                |
+| **High** | Toast notifications not announced to screen readers            | `Toast.js`                                    | `.toast-container` has no `role="alert"` or `aria-live="polite"`                                                                              |
+| Medium   | ~100 lines of duplicated logic between views                   | `PollView.js:76-121`, `BrowseView.js:154-199` | Correction editor, retry logic, `formatTimestamp`, `anyBusy`, JSON error handling all duplicated                                              |
+| Medium   | `JsonViewer` collapsed state is global                         | `JsonViewer.js:3`                             | Module-level `collapsed` object shared across all viewer instances — toggling in one view affects another                                     |
+| Medium   | `expandedIndex` is fragile                                     | `BrowseView.js:14,130-140`                    | Integer index into filtered results — "Load More" appending records shifts which row is expanded. Should use `partition:offset` composite key |
+| Medium   | Correction targets selected topic, not record's original topic | `BrowseView.js:190`                           | Browsing a DLT topic and editing sends correction to DLT topic, not original topic                                                            |
+| Medium   | No mobile/tablet breakpoints                                   | `app.css`                                     | No `@media` queries; sidebar fixed at `20rem`; browse table unusable on small screens                                                         |
+| Low      | Sidebar DLT item clickable area inconsistent                   | `Sidebar.js:57-98`                            | Only inner `.consumer-item-label` triggers navigation, not the container — breaks listbox contract                                            |
+| Low      | `m.trust()` scattered for SVG icons                            | Throughout all components                     | Safe (hardcoded), but should be centralized into a shared `Icons` object                                                                      |
+| Low      | Direct DOM access in `openEditor`                              | `PollView.js:85-87`, `BrowseView.js:162-165`  | `document.querySelector` with `setTimeout` — should use Mithril's `oncreate` lifecycle                                                        |
 
 #### Recommendations
 
@@ -172,7 +173,7 @@ Default to `maxCycles - 1` (conservative) instead of 0, and log at ERROR.
 |----------|-------|----------|--------|
 | **High** | Log injection via user-controlled topic names | `KafkaOpsController:52,73,96,122,149` | `String.format()` with unsanitized `topicName` — newline characters (`%0D%0A`) inject fake log entries. SLF4J `{}` placeholders also don't sanitize newlines |
 | **High** | Correction payload has no size limit | `KafkaOpsController:118` | `@RequestBody String` without `@Size` — potential memory exhaustion (mitigated by server defaults but not explicitly controlled) |
-| Medium | Exception messages exposed in error responses | `KafkaOpsController:165-168` | Generic `Exception` catch returns `e.getMessage()` — could expose Kafka broker addresses, class names, or internal details |
+| Medium | Exception messages exposed in error responses | `KafkaOpsController:165-168` | Generic `Exception` catch returns `e.getMessage()` — intentional for ops usability but could expose internal details. Should be configurable |
 | Medium | `isolation.level=read_uncommitted` not documented | `KafkaOpsConsumerRegistry:104` | Ops consumer can read transactional messages that were never committed — intentional for debugging but should be documented |
 | Medium | Static files served regardless of `enabled` flags | Spring Boot default resource handler | `/kafka-ops/**` HTML/JS/CSS served when JAR is on classpath, even with both features disabled — reveals library is installed |
 | Medium | No CSRF protection on POST endpoints | `KafkaOpsController:48,118,138` | Without Spring Security, POST endpoints are vulnerable to CSRF from any origin |
@@ -186,7 +187,7 @@ Default to `maxCycles - 1` (conservative) instead of 0, and log at ERROR.
 **P0 — Must fix**
 1. Sanitize topic names in log statements — validate against `^[a-zA-Z0-9._-]+$` regex, reject with 400 if invalid. This also serves as input validation for all topic parameters
 2. Add `@Size(max = 1_048_576)` to correction payload or document expected server max size
-3. For generic `Exception` catch blocks, return "Internal server error" instead of `e.getMessage()`
+3. Make error detail exposure configurable via `kafka.ops.rest-api.expose-error-details` (default `true` for backward compatibility). When `false`, generic exceptions return "Internal server error" instead of `e.getMessage()`
 
 **P1 — Should fix**
 4. Synchronize `getConsumerDetails()` through the same lock as `ManualKafkaConsumer`, or use separate `KafkaConsumer` instances for metadata queries (also listed under Kafka concerns)
@@ -220,11 +221,11 @@ Default to `maxCycles - 1` (conservative) instead of 0, and log at ERROR.
 |---|------|--------|----------|
 | 9 | Kafka | Switch `ManualKafkaConsumer` from global lock to per-consumer lock | High |
 | 10 | Security | Add `@Size` limit on correction payload | High |
-| 11 | Security | Sanitize exception messages in generic error responses | Medium |
-| 12 | Backend | Add `POST /dlt-routing/{topic}/stop` endpoint | Medium |
-| 13 | Backend | Extract boilerplate try/catch/MDC into filter or advice | Medium |
-| 14 | Kafka | Broaden `extractConnectionProps` to deny-list approach | Medium |
-| 15 | Kafka | Change malformed cycle header fallback from 0 to `maxCycles - 1` | Medium |
+| 11 | Security | Make error detail exposure configurable (`expose-error-details` property) | Medium |
+| 12 | Backend | Extract boilerplate try/catch/MDC into `@ControllerAdvice(assignableTypes = KafkaOpsController.class)` | Medium |
+| 13 | Kafka | Switch `extractConnectionProps` from allow-list to deny-list (copy all, override `group.id` + deserializers) | Medium |
+| 14 | Kafka | Change malformed cycle header fallback from 0 to `maxCycles - 1` | Medium |
+| 15 | Kafka | Create per-route `KafkaTemplate` using same container factory as consumer's `getContainerName()` | Medium |
 | 16 | Frontend | Fix `JsonViewer` global collapsed state and `expandedIndex` fragility | Medium |
 | 17 | Security | Redact consumer record values from INFO logs | Medium |
 
@@ -237,7 +238,7 @@ Default to `maxCycles - 1` (conservative) instead of 0, and log at ERROR.
 | 20 | Frontend | Extract shared utilities and components to reduce ~100-line duplication | Medium |
 | 21 | Backend | Replace `@ComponentScan` with explicit `@Import` or `@Bean` | Medium |
 | 22 | Backend | Eliminate raw types throughout | Medium |
-| 23 | Kafka | Document at-least-once semantics and single-cluster assumption | Low |
+| 23 | Kafka | Document at-least-once semantics | Low |
 | 24 | Frontend | Add mobile responsive breakpoints | Medium |
 | 25 | Frontend | Centralize SVG icons, use Mithril `oncreate` for scroll-into-view | Low |
 
@@ -257,14 +258,17 @@ Default to `maxCycles - 1` (conservative) instead of 0, and log at ERROR.
 ### Negative
 
 - P0 items include one concurrency bug (`getConsumerDetails()`) that requires careful testing
-- Adding a DLT stop endpoint and extracting controller boilerplate are non-trivial changes
+- Extracting controller boilerplate into `@ControllerAdvice` requires verifying it doesn't affect host applications
 - Frontend accessibility fixes (focus trap, ARIA) require understanding Mithril lifecycle hooks
-- Broadening `extractConnectionProps` to a deny-list approach needs investigation of all Kafka consumer properties
+- Per-route `KafkaTemplate` adds complexity to DLT router initialization
 
 ### Risks Accepted
 
 - **No built-in auth/rate-limiting**: Intentional — the library is an embedded tool, not a standalone service. Host applications bring their own security stack. Will be documented in README.
+- **No DLT routing stop endpoint**: Intentionally omitted. In multi-pod deployments, `POST /stop` on one pod doesn't stop the consumer group — the operator would need to hit every pod. The self-stop via timestamp cutoff + idle timeout is the correct distributed pattern. Containers also stop when all pre-cutoff messages are processed.
+- **Buffered records after `container.stop()`**: After the cutoff stop, already-fetched records in the internal buffer may continue to be delivered. This is not an issue — offsets are not committed for cutoff-exceeded records, so they will be reprocessed on the next routing window.
 - **Global synchronization on `ManualKafkaConsumer`**: Kafka consumers are not thread-safe. The current global lock is correct but suboptimal — per-consumer locking is an optimization (P1), not a correctness fix.
 - **No CSP header**: Low risk for an internal ops tool. Can be added by host application's security configuration.
 - **Static files served when disabled**: Spring Boot default behavior. Documenting mitigation (Spring Security path deny) is sufficient.
 - **`isolation.level=read_uncommitted`**: Intentional for debugging — ops engineers need to see all messages including uncommitted transactions. Will be documented.
+- **Error messages in responses**: Intentional for ops usability — exposing `e.getMessage()` helps operators diagnose issues without checking logs. Will be made configurable via property for production environments that need to hide internal details.
