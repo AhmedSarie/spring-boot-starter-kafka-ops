@@ -33,20 +33,13 @@ class KafkaOpsConsumerRegistryTest {
   private ListableBeanFactory beanFactory;
   private KafkaOpsAwareConsumer contractMock;
   private KafkaConsumer mockKafkaConsumer;
-  private KafkaConsumer mockMetadataConsumer;
-  private final Function<Map<String, Object>, KafkaConsumer> mockFactory = props -> {
-    if (props.containsKey("group.id") && String.valueOf(props.get("group.id")).endsWith("-metadata")) {
-      return mockMetadataConsumer;
-    }
-    return mockKafkaConsumer;
-  };
+  private final Function<Map<String, Object>, KafkaConsumer> mockFactory = props -> mockKafkaConsumer;
 
   @BeforeEach
   void setUp() {
     beanFactory = mock(ListableBeanFactory.class);
     contractMock = mock(KafkaOpsAwareConsumer.class);
     mockKafkaConsumer = mock(KafkaConsumer.class);
-    mockMetadataConsumer = mock(KafkaConsumer.class);
   }
 
   @Test
@@ -105,13 +98,13 @@ class KafkaOpsConsumerRegistryTest {
 
     var tp0 = new TopicPartition(REGISTERED_TOPIC, 0);
     var tp1 = new TopicPartition(REGISTERED_TOPIC, 1);
-    when(mockMetadataConsumer.partitionsFor(REGISTERED_TOPIC))
+    when(mockKafkaConsumer.partitionsFor(REGISTERED_TOPIC))
         .thenReturn(List.of(
             new PartitionInfo(REGISTERED_TOPIC, 0, null, null, null),
             new PartitionInfo(REGISTERED_TOPIC, 1, null, null, null)));
-    when(mockMetadataConsumer.endOffsets(anyList()))
+    when(mockKafkaConsumer.endOffsets(anyList()))
         .thenReturn(Map.of(tp0, 100L, tp1, 200L));
-    when(mockMetadataConsumer.beginningOffsets(anyList()))
+    when(mockKafkaConsumer.beginningOffsets(anyList()))
         .thenReturn(Map.of(tp0, 10L, tp1, 50L));
 
     registry.afterPropertiesSet();
@@ -124,7 +117,7 @@ class KafkaOpsConsumerRegistryTest {
     assertEquals(REGISTERED_TOPIC, details.get(0).getName());
     assertEquals(2, details.get(0).getPartitions());
     assertEquals(240, details.get(0).getMessageCount()); // (100-10) + (200-50)
-    verify(mockMetadataConsumer).partitionsFor(REGISTERED_TOPIC);
+    verify(mockKafkaConsumer).partitionsFor(REGISTERED_TOPIC);
   }
 
   @Test
@@ -220,7 +213,6 @@ class KafkaOpsConsumerRegistryTest {
 
     // then
     verify(mockKafkaConsumer).close();
-    verify(mockMetadataConsumer).close();
   }
 
   @SuppressWarnings("unchecked")
