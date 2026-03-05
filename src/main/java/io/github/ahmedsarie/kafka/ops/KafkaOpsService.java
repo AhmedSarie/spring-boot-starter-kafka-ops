@@ -1,7 +1,5 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import static io.github.ahmedsarie.kafka.ops.AvroUtil.avroToJson;
-import static io.github.ahmedsarie.kafka.ops.AvroUtil.jsonToAvro;
 import static java.lang.String.format;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -49,15 +47,16 @@ public class KafkaOpsService {
     return registry.getConsumerDetails();
   }
 
+  @SuppressWarnings({"unchecked", "deprecation"})
   public void process(String topic, String payload) {
     var entry = this.registry.find(topic);
-    var avroSchema = entry.getKey().getSchema();
+    var consumer = entry.getKey();
+    var codec = resolveCodec(consumer);
     var correctionTopic = topic + "-correction";
-    if (avroSchema != null) {
-      var specificRecord = jsonToAvro(payload, avroSchema);
-      entry.getKey().consume(new ConsumerRecord(correctionTopic, 0, 0, null, specificRecord));
+    if (codec != null) {
+      consumer.consume(new ConsumerRecord(correctionTopic, 0, 0, null, codec.fromJson(payload)));
     } else {
-      entry.getKey().consume(new ConsumerRecord(correctionTopic, 0, 0, null, payload));
+      consumer.consume(new ConsumerRecord(correctionTopic, 0, 0, null, payload));
     }
   }
 
@@ -77,18 +76,22 @@ public class KafkaOpsService {
     }, () -> log.warn(format("empty records in topic = %s, partition = %d, offset = %d", topic, partition, offset)));
   }
 
+  @SuppressWarnings("deprecation")
   @SneakyThrows
   public Optional<KafkaPollResponse> poll(String topic, int partition, long offset) {
     var entry = this.registry.find(topic);
     var consumer = entry.getValue();
+    var codec = resolveCodec(entry.getKey());
     Optional<ConsumerRecord> consumerRecord = manualKafkaConsumer.poll(topic, partition, offset, consumer);
-    return consumerRecord.map(this::toKafkaPollResponse);
+    return consumerRecord.map(cr -> toKafkaPollResponse(cr, codec));
   }
 
+  @SuppressWarnings("deprecation")
   public KafkaOpsBatchResponse batchPoll(String topicName, Integer partition, Long startOffset,
                                          Long startTimestamp, int limit) {
     var entry = this.registry.find(topicName);
     var consumer = entry.getValue();
+    var codec = resolveCodec(entry.getKey());
     var cappedLimit = Math.min(limit, batchMaxLimit);
 
     List<ConsumerRecord> records;
@@ -99,28 +102,28 @@ public class KafkaOpsService {
     }
 
     var batchRecords = records.stream()
-        .map(this::toBatchRecord)
+        .map(r -> toBatchRecord(r, codec))
         .toList();
 
     var hasMore = batchRecords.size() >= cappedLimit;
     return new KafkaOpsBatchResponse(batchRecords, hasMore);
   }
 
-  private KafkaOpsBatchResponse.KafkaOpsBatchRecord toBatchRecord(ConsumerRecord<String, ?> record) {
+  private KafkaOpsBatchResponse.KafkaOpsBatchRecord toBatchRecord(ConsumerRecord<String, ?> record, ValueCodec codec) {
     return new KafkaOpsBatchResponse.KafkaOpsBatchRecord(
         record.partition(),
         record.offset(),
         record.timestamp(),
         record.key(),
-        recordValueAsString(record),
+        recordValueAsString(record, codec),
         extractHeaders(record)
     );
   }
 
-  private KafkaPollResponse toKafkaPollResponse(ConsumerRecord consumerRecord) {
+  private KafkaPollResponse toKafkaPollResponse(ConsumerRecord consumerRecord, ValueCodec codec) {
     var key = consumerRecord.key() != null ? String.valueOf(consumerRecord.key()) : null;
     return new KafkaPollResponse(
-        recordValueAsString(consumerRecord),
+        recordValueAsString(consumerRecord, codec),
         key,
         consumerRecord.partition(),
         consumerRecord.offset(),
@@ -150,11 +153,25 @@ public class KafkaOpsService {
     return headers;
   }
 
+  @SuppressWarnings({"unchecked", "deprecation"})
+  private ValueCodec resolveCodec(KafkaOpsAwareConsumer consumer) {
+    if (consumer.getValueCodec() != null) {
+      return consumer.getValueCodec();
+    }
+    if (consumer.getSchema() != null) {
+      return new AvroValueCodec(consumer.getSchema());
+    }
+    return null;
+  }
+
+  @SuppressWarnings("unchecked")
   @SneakyThrows
-  private String recordValueAsString(ConsumerRecord<String, ?> consumerRecord) {
+  private String recordValueAsString(ConsumerRecord<String, ?> consumerRecord, ValueCodec codec) {
     Object value = consumerRecord.value();
-    if (value instanceof GenericContainer) {
-      return avroToJson((GenericContainer) value);
+    if (codec != null) {
+      return codec.toJson(value);
+    } else if (value instanceof GenericContainer avro) {
+      return AvroUtil.avroToJson(avro);
     } else if (value instanceof String) {
       return (String) value;
     } else {

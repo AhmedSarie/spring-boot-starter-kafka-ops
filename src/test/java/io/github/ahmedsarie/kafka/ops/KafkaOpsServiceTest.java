@@ -121,8 +121,30 @@ class KafkaOpsServiceTest {
   }
 
   @Test
-  @DisplayName("process should succeed when an Avro consumer is re-processed for corrections")
-  void testProcessWithAvroTopicConsumerHappyScenario() {
+  @DisplayName("process should succeed when an Avro consumer uses ValueCodec for corrections")
+  void testProcessWithAvroValueCodecHappyScenario() {
+    // prepare
+    var avroJsonMsg = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    when(contractMock.getValueCodec()).thenReturn(new AvroValueCodec<>(TestRecord.getClassSchema()));
+    when(registry.find(topic)).thenReturn(entry);
+
+    // when
+    service.process(topic, avroJsonMsg);
+
+    // then
+    verify(contractMock).consume(argThat(arg -> {
+      boolean isTestRecord = arg.value() instanceof TestRecord;
+      var value = (TestRecord) arg.value();
+      boolean isNameEquals = value.getName().equals("junit");
+      boolean isDescEquals = value.getDesc().equals("serialise!");
+      return isTestRecord && isNameEquals && isDescEquals;
+    }));
+  }
+
+  @Test
+  @DisplayName("process should succeed with deprecated getSchema() for backward compatibility")
+  void testProcessWithDeprecatedSchemaBackwardCompat() {
     // prepare
     var avroJsonMsg = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
     when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
@@ -136,9 +158,27 @@ class KafkaOpsServiceTest {
     verify(contractMock).consume(argThat(arg -> {
       boolean isTestRecord = arg.value() instanceof TestRecord;
       var value = (TestRecord) arg.value();
-      boolean isNameEquals = value.getName().equals("junit");
-      boolean isDescEquals = value.getDesc().equals("serialise!");
-      return isTestRecord && isNameEquals && isDescEquals;
+      return isTestRecord && value.getName().equals("junit");
+    }));
+  }
+
+  @Test
+  @DisplayName("process should succeed when a Proto consumer uses ValueCodec for corrections")
+  void testProcessWithProtoValueCodecHappyScenario() {
+    // prepare — Struct well-known type JSON is a plain JSON object
+    var protoJsonMsg = "{\"name\": \"junit\"}";
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    when(contractMock.getValueCodec()).thenReturn(new ProtoValueCodec<>(com.google.protobuf.Struct.getDefaultInstance()));
+    when(registry.find(topic)).thenReturn(entry);
+
+    // when
+    service.process(topic, protoJsonMsg);
+
+    // then
+    verify(contractMock).consume(argThat(arg -> {
+      boolean isStruct = arg.value() instanceof com.google.protobuf.Struct;
+      var struct = (com.google.protobuf.Struct) arg.value();
+      return isStruct && struct.getFieldsMap().containsKey("name");
     }));
   }
 
@@ -173,11 +213,14 @@ class KafkaOpsServiceTest {
 
   @ParameterizedTest(name = "Poll succeeds for {2} message type consumers")
   @MethodSource("messages")
-  void testPollHappyScenario(Object value, String result, String name) {
+  void testPollHappyScenario(Object value, String result, String name, ValueCodec codec) {
     // prepare
     int partition = 0;
     long offset = 0L;
     when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    if (codec != null) {
+      when(contractMock.getValueCodec()).thenReturn(codec);
+    }
     when(registry.find(topic)).thenReturn(entry);
     var msgKey = "anything";
     var headers = new RecordHeaders();
@@ -341,18 +384,58 @@ class KafkaOpsServiceTest {
 
   private static Stream<Arguments> messages() {
     var msg = "msg";
-    var avroRecord = getAvroRecord();
     var javaPojo = new TestPojo(1, "test");
-    var avroRecordJsonResult = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
     var javaPojoJsonResult = "{\n" + "  \"id\" : 1,\n" + "  \"name\" : \"test\"\n" + "}";
 
-    return Stream.of(Arguments.of(msg, msg, "String"), Arguments.of(avroRecord, avroRecordJsonResult, "Avro"),
-        Arguments.of(javaPojo, javaPojoJsonResult, "Pojo")
+    return Stream.of(
+        Arguments.of(msg, msg, "String", null),
+        Arguments.of(javaPojo, javaPojoJsonResult, "Pojo", null)
     );
   }
 
-  private static TestRecord getAvroRecord() {
-    return TestRecord.newBuilder().setName("junit").setDesc("serialise!").build();
+  @Test
+  @DisplayName("Poll succeeds for Avro message type consumers with ValueCodec")
+  void testPollWithAvroValueCodec() {
+    // prepare
+    var avroRecord = TestRecord.newBuilder().setName("junit").setDesc("serialise!").build();
+    var codec = new AvroValueCodec<>(TestRecord.getClassSchema());
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    when(contractMock.getValueCodec()).thenReturn(codec);
+    when(registry.find(topic)).thenReturn(entry);
+    var consumerRecord = new ConsumerRecord<>(topic, 0, 0L, ConsumerRecord.NO_TIMESTAMP,
+        null, 0, 0, "key", (Object) avroRecord, new RecordHeaders(), Optional.empty());
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(consumerRecord));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertTrue(poll.isPresent());
+    assertEquals("{\"name\":\"junit\",\"desc\":\"serialise!\"}", poll.get().getConsumerRecordValue());
+  }
+
+  @Test
+  @DisplayName("Poll succeeds for Proto message type consumers with ValueCodec")
+  void testPollWithProtoValueCodec() {
+    // prepare
+    var struct = com.google.protobuf.Struct.newBuilder()
+        .putFields("name", com.google.protobuf.Value.newBuilder().setStringValue("junit").build())
+        .build();
+    var codec = new ProtoValueCodec<>(com.google.protobuf.Struct.getDefaultInstance());
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    when(contractMock.getValueCodec()).thenReturn(codec);
+    when(registry.find(topic)).thenReturn(entry);
+    var consumerRecord = new ConsumerRecord<>(topic, 0, 0L, ConsumerRecord.NO_TIMESTAMP,
+        null, 0, 0, "key", (Object) struct, new RecordHeaders(), Optional.empty());
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(consumerRecord));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertTrue(poll.isPresent());
+    assertTrue(poll.get().getConsumerRecordValue().contains("\"name\""));
+    assertTrue(poll.get().getConsumerRecordValue().contains("junit"));
   }
 
   @Data

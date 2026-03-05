@@ -20,7 +20,15 @@ public interface KafkaOpsAwareConsumer<K, T> {
     return null;
   }
 
+  /**
+   * @deprecated Use {@link #getValueCodec()} with {@link AvroValueCodec} instead.
+   */
+  @Deprecated(forRemoval = true)
   default Schema getSchema() {
+    return null;
+  }
+
+  default ValueCodec<T> getValueCodec() {
     return null;
   }
 }
