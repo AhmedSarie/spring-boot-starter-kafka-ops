@@ -436,6 +436,27 @@ class KafkaOpsServiceTest {
     assertTrue(poll.get().getKey().contains("abc-123"));
   }
 
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  @Test
+  @DisplayName("Poll uses key codec when declared instead of auto-detect")
+  void testPollUsesKeyCodec() {
+    // prepare
+    var avroKey = TestRecord.newBuilder().setName("key-name").setDesc("key-desc").build();
+    var keyCodec = new AvroValueCodec<>(TestRecord.getClassSchema());
+    when(contractMock.getTopic()).thenReturn(TopicConfig.of(topic));
+    when(contractMock.getKeyCodec()).thenReturn(keyCodec);
+    when(registry.find(topic)).thenReturn(entry);
+    ConsumerRecord consumerRecord = new ConsumerRecord(topic, 0, 0L, avroKey, "string-value");
+    when(manualKafkaConsumerMock.poll(eq(topic), eq(0), eq(0L), any())).thenReturn(Optional.of(consumerRecord));
+
+    // when
+    var poll = service.poll(topic, 0, 0L);
+
+    // then
+    assertTrue(poll.isPresent());
+    assertEquals("{\"name\":\"key-name\",\"desc\":\"key-desc\"}", poll.get().getKey());
+  }
+
   @Test
   @DisplayName("Poll succeeds for Proto message type consumers with ValueCodec")
   void testPollWithProtoValueCodec() {

@@ -82,16 +82,20 @@ public class KafkaOpsService {
   public Optional<KafkaPollResponse> poll(String topic, int partition, long offset) {
     var entry = this.registry.find(topic);
     var consumer = entry.getValue();
-    var codec = entry.getKey().getValueCodec();
+    var registeredConsumer = entry.getKey();
+    var keyCodec = registeredConsumer.getKeyCodec();
+    var valueCodec = registeredConsumer.getValueCodec();
     Optional<ConsumerRecord> consumerRecord = manualKafkaConsumer.poll(topic, partition, offset, consumer);
-    return consumerRecord.map(cr -> toKafkaPollResponse(cr, codec));
+    return consumerRecord.map(cr -> toKafkaPollResponse(cr, keyCodec, valueCodec));
   }
 
   public KafkaOpsBatchResponse batchPoll(String topicName, Integer partition, Long startOffset,
                                          Long startTimestamp, int limit) {
     var entry = this.registry.find(topicName);
     var consumer = entry.getValue();
-    var codec = entry.getKey().getValueCodec();
+    var registeredConsumer = entry.getKey();
+    var keyCodec = registeredConsumer.getKeyCodec();
+    var valueCodec = registeredConsumer.getValueCodec();
     var cappedLimit = Math.min(limit, batchMaxLimit);
 
     List<ConsumerRecord> records;
@@ -102,28 +106,30 @@ public class KafkaOpsService {
     }
 
     var batchRecords = records.stream()
-        .map(r -> toBatchRecord(r, codec))
+        .map(r -> toBatchRecord(r, keyCodec, valueCodec))
         .toList();
 
     var hasMore = batchRecords.size() >= cappedLimit;
     return new KafkaOpsBatchResponse(batchRecords, hasMore);
   }
 
-  private KafkaOpsBatchResponse.KafkaOpsBatchRecord toBatchRecord(ConsumerRecord record, ValueCodec codec) {
+  private KafkaOpsBatchResponse.KafkaOpsBatchRecord toBatchRecord(ConsumerRecord record,
+                                                                   ValueCodec keyCodec, ValueCodec valueCodec) {
     return new KafkaOpsBatchResponse.KafkaOpsBatchRecord(
         record.partition(),
         record.offset(),
         record.timestamp(),
-        toJsonString(record.key()),
-        recordValueAsString(record, codec),
+        keyAsString(record, keyCodec),
+        recordValueAsString(record, valueCodec),
         extractHeaders(record)
     );
   }
 
-  private KafkaPollResponse toKafkaPollResponse(ConsumerRecord consumerRecord, ValueCodec codec) {
+  private KafkaPollResponse toKafkaPollResponse(ConsumerRecord consumerRecord,
+                                                 ValueCodec keyCodec, ValueCodec valueCodec) {
     return new KafkaPollResponse(
-        recordValueAsString(consumerRecord, codec),
-        toJsonString(consumerRecord.key()),
+        recordValueAsString(consumerRecord, valueCodec),
+        keyAsString(consumerRecord, keyCodec),
         consumerRecord.partition(),
         consumerRecord.offset(),
         consumerRecord.timestamp(),
@@ -150,6 +156,11 @@ public class KafkaOpsService {
       headers.put(header.key(), value);
     }
     return headers;
+  }
+
+  @SuppressWarnings("unchecked")
+  private String keyAsString(ConsumerRecord consumerRecord, ValueCodec keyCodec) {
+    return keyCodec != null ? keyCodec.toJson(consumerRecord.key()) : toJsonString(consumerRecord.key());
   }
 
   @SuppressWarnings("unchecked")
