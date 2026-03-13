@@ -531,16 +531,16 @@ var BrowseView = (function () {
                                                         'aria-label': 'Close'
                                                     }, m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'))
                                                 ]),
-                                                m('label', { style: 'margin-bottom:0.25rem;font-weight:600' }, 'Key'),
-                                                m('textarea.correction-textarea', {
+                                                state.correctionKey ? m('label', { style: 'margin-bottom:0.25rem;font-weight:600' }, 'Key') : null,
+                                                state.correctionKey ? m('textarea.correction-textarea', {
                                                     value: state.correctionKey,
                                                     oninput: function (e) { state.correctionKey = e.target.value; },
                                                     spellcheck: false,
                                                     rows: 3,
                                                     style: 'min-height:3rem',
                                                     onclick: function (e) { e.stopPropagation(); }
-                                                }),
-                                                m('label', { style: 'margin-bottom:0.25rem;margin-top:0.75rem;font-weight:600' }, 'Value'),
+                                                }) : null,
+                                                m('label', { style: 'margin-bottom:0.25rem;' + (state.correctionKey ? 'margin-top:0.75rem;' : '') + 'font-weight:600' }, 'Value'),
                                                 m('textarea.correction-textarea', {
                                                     value: state.correctionValue,
                                                     oninput: function (e) { state.correctionValue = e.target.value; },

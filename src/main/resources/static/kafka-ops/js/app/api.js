@@ -55,7 +55,7 @@ var Api = {
             method: 'POST',
             url: this.basePath + '/corrections/' + encodeURIComponent(topic),
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: key, value: value }),
+            body: JSON.stringify({ key: key || null, value: value }),
             serialize: function (v) { return v; }
         });
     },
