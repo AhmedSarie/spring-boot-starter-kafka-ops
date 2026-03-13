@@ -9,11 +9,13 @@ var PollView = (function () {
         polling: false,
         retrying: false,
         showEditor: false,
+        correctionKey: '',
         correctionValue: '',
         sending: false,
         jsonError: false,
         showDiffModal: false,
-        headersExpanded: false
+        headersExpanded: false,
+        keyExpanded: false
     };
 
     var anyBusy = function () { return state.polling || state.retrying || state.sending; };
@@ -31,6 +33,30 @@ var PollView = (function () {
         }
     }
 
+    function isJsonLike(str) {
+        if (!str) return false;
+        var trimmed = str.trim();
+        return (trimmed.charAt(0) === '{' || trimmed.charAt(0) === '[');
+    }
+
+    function renderKeySection(keyStr) {
+        if (!keyStr) return null;
+        if (isJsonLike(keyStr)) {
+            return m('.result-headers', [
+                m('span.result-label.headers-toggle', {
+                    onclick: function () { state.keyExpanded = !state.keyExpanded; },
+                    style: 'cursor:pointer'
+                }, 'Key ' + (state.keyExpanded ? '\u25BC' : '\u25B6')),
+                state.keyExpanded
+                    ? m(JsonViewer, { data: keyStr, instanceKey: 'key:' + state.topic + ':' + state.partition + ':' + state.offset })
+                    : null
+            ]);
+        }
+        return m('.result-metadata', [
+            m('span.meta-badge.meta-badge-key', 'Key: ' + keyStr)
+        ]);
+    }
+
     function pollMessage() {
         if (!state.topic) { Toast.error('No topic selected'); return; }
         if (state.partition < 0) { Toast.error('Partition must be >= 0'); return; }
@@ -41,6 +67,7 @@ var PollView = (function () {
         state.pollResponse = null;
         state.showEditor = false;
         state.headersExpanded = false;
+        state.keyExpanded = false;
 
         Api.poll(state.topic, state.partition, state.offset).then(function (data) {
             state.pollResponse = data;
@@ -74,6 +101,12 @@ var PollView = (function () {
     }
 
     function openEditor() {
+        var keyStr = state.pollResponse ? (state.pollResponse.key || '') : '';
+        if (isJsonLike(keyStr)) {
+            try { state.correctionKey = JSON.stringify(JSON.parse(keyStr), null, 2); } catch (e) { state.correctionKey = keyStr; }
+        } else {
+            state.correctionKey = keyStr;
+        }
         try {
             state.correctionValue = JSON.stringify(JSON.parse(state.message), null, 2);
         } catch (e) {
@@ -108,8 +141,9 @@ var PollView = (function () {
     function confirmSendCorrection() {
         state.showDiffModal = false;
         state.sending = true;
+        var key = state.correctionKey.trim();
         var payload = state.correctionValue.trim();
-        Api.sendCorrection(state.topic, payload).then(function (data) {
+        Api.sendCorrection(state.topic, key, payload).then(function (data) {
             var id = data && data.id ? data.id.slice(0, 8) + '...' : '';
             Toast.success('Correction sent' + (id ? ' — ID: ' + id : ''));
             state.showEditor = false;
@@ -133,10 +167,12 @@ var PollView = (function () {
         state.polling = false;
         state.retrying = false;
         state.showEditor = false;
+        state.correctionKey = '';
         state.correctionValue = '';
         state.sending = false;
         state.jsonError = false;
         state.showDiffModal = false;
+        state.keyExpanded = false;
     }
 
     function selectHistory(entry) {
@@ -157,10 +193,6 @@ var PollView = (function () {
         }
         if (resp.timestamp) {
             badges.push(m('span.meta-badge', { key: 'ts' }, formatTimestamp(resp.timestamp)));
-        }
-        if (resp.key) {
-            badges.push(m('span.meta-badge.meta-badge-key', { key: 'k', title: resp.key },
-                'Key: ' + (resp.key.length > 30 ? resp.key.slice(0, 30) + '...' : resp.key)));
         }
         return badges.length > 0 ? m('.result-metadata', badges) : null;
     }
@@ -280,6 +312,9 @@ var PollView = (function () {
                     /* Enriched metadata badges */
                     renderMetadataBadges(),
 
+                    /* Key */
+                    state.pollResponse ? renderKeySection(state.pollResponse.key) : null,
+
                     /* Headers */
                     renderHeaders(),
 
@@ -315,6 +350,15 @@ var PollView = (function () {
                             'aria-label': 'Close'
                         }, m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'))
                     ]),
+                    state.correctionKey ? m('label', { style: 'margin-bottom:0.25rem;font-weight:600' }, 'Key') : null,
+                    state.correctionKey ? m('textarea.correction-textarea', {
+                        value: state.correctionKey,
+                        oninput: function (e) { state.correctionKey = e.target.value; },
+                        spellcheck: false,
+                        rows: 3,
+                        style: 'min-height:3rem'
+                    }) : null,
+                    m('label', { style: 'margin-bottom:0.25rem;' + (state.correctionKey ? 'margin-top:0.75rem;' : '') + 'font-weight:600' }, 'Value'),
                     m('textarea.correction-textarea', {
                         value: state.correctionValue,
                         oninput: function (e) { state.correctionValue = e.target.value; },
@@ -344,8 +388,10 @@ var PollView = (function () {
 
                 // Diff confirmation modal
                 state.showDiffModal ? m(DiffModal, {
-                    original: state.message,
-                    edited: state.correctionValue.trim(),
+                    originalKey: state.pollResponse ? (state.pollResponse.key || '') : '',
+                    editedKey: state.correctionKey.trim(),
+                    originalValue: state.message,
+                    editedValue: state.correctionValue.trim(),
                     onConfirm: confirmSendCorrection,
                     onCancel: cancelDiffModal
                 }) : null

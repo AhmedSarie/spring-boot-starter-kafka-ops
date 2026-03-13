@@ -50,12 +50,12 @@ var Api = {
         });
     },
 
-    sendCorrection: function (topic, payload) {
+    sendCorrection: function (topic, key, value) {
         return m.request({
             method: 'POST',
             url: this.basePath + '/corrections/' + encodeURIComponent(topic),
             headers: { 'Content-Type': 'application/json' },
-            body: payload,
+            body: JSON.stringify({ key: key || null, value: value }),
             serialize: function (v) { return v; }
         });
     },

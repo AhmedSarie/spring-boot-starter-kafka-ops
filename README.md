@@ -218,14 +218,51 @@ Returns the configured API base path and DLT routing settings so the UI can reso
 | `kafka.ops.dlt-routing.restart-cron`          | `0 */30 * * * *`               | Cron expression controlling when the router restarts to check for new DLT messages. Use `-` to disable automatic restarts. |
 | `kafka.ops.dlt-routing.max-cycles`            | `10`                           | Skip a DLT message after it has been routed this many times (prevents infinite loops)                                      |
 
-## Avro support
+## Value format support
 
-If your consumer uses Avro, override `getSchema()` to enable automatic JSON-to-Avro conversion for the corrections endpoint:
+The library auto-detects common value types (String, Avro, Protobuf, Jackson-serializable POJOs) for poll and browse responses. For the **corrections endpoint**, which needs to deserialize JSON back into your value type, override `getValueCodec()`:
+
+**Avro:**
 
 ```java
 @Override
-public Schema getSchema() {
-    return OrderEvent.getClassSchema();
+public ValueCodec<OrderEvent> getValueCodec() {
+    return new AvroValueCodec<>(OrderEvent.getClassSchema());
+}
+```
+
+Requires `org.apache.avro:avro` on the classpath (the library declares it as `provided`).
+
+**Protobuf:**
+
+```java
+@Override
+public ValueCodec<OrderEvent> getValueCodec() {
+    return new ProtoValueCodec<>(OrderEvent.getDefaultInstance());
+}
+```
+
+Requires `com.google.protobuf:protobuf-java` and `com.google.protobuf:protobuf-java-util` on the classpath (both declared as `provided`).
+
+**Custom formats:**
+
+Implement `ValueCodec<T>` directly:
+
+```java
+public class ThriftValueCodec<T> implements ValueCodec<T> {
+    @Override public String toJson(T value) { /* serialize to JSON */ }
+    @Override public T fromJson(String json) { /* deserialize from JSON */ }
+}
+```
+
+Then declare it via `getValueCodec()` and/or `getKeyCodec()` on your consumer.
+
+**Key serialization** is auto-detected for built-in types (String, Avro, Protobuf, Jackson POJOs). For custom key types, override `getKeyCodec()`:
+
+```java
+@Override
+public ValueCodec<MyCustomKey> getKeyCodec() {
+    return new MyCustomKeyCodec();
 }
 ```
 

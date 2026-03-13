@@ -1,6 +1,5 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import org.apache.avro.Schema;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 /**
@@ -20,7 +19,11 @@ public interface KafkaOpsAwareConsumer<K, T> {
     return null;
   }
 
-  default Schema getSchema() {
+  default ValueCodec<K> getKeyCodec() {
+    return null;
+  }
+
+  default ValueCodec<T> getValueCodec() {
     return null;
   }
 }

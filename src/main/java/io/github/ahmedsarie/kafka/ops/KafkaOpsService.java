@@ -1,10 +1,10 @@
 package io.github.ahmedsarie.kafka.ops;
 
-import static io.github.ahmedsarie.kafka.ops.AvroUtil.avroToJson;
-import static io.github.ahmedsarie.kafka.ops.AvroUtil.jsonToAvro;
 import static java.lang.String.format;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.protobuf.MessageOrBuilder;
+import com.google.protobuf.util.JsonFormat;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -49,16 +49,16 @@ public class KafkaOpsService {
     return registry.getConsumerDetails();
   }
 
-  public void process(String topic, String payload) {
+  @SuppressWarnings("unchecked")
+  public void process(String topic, String key, String value) {
     var entry = this.registry.find(topic);
-    var avroSchema = entry.getKey().getSchema();
+    var consumer = entry.getKey();
+    var valueCodec = consumer.getValueCodec();
+    var keyCodec = consumer.getKeyCodec();
     var correctionTopic = topic + "-correction";
-    if (avroSchema != null) {
-      var specificRecord = jsonToAvro(payload, avroSchema);
-      entry.getKey().consume(new ConsumerRecord(correctionTopic, 0, 0, null, specificRecord));
-    } else {
-      entry.getKey().consume(new ConsumerRecord(correctionTopic, 0, 0, null, payload));
-    }
+    var deserializedKey = (key != null && keyCodec != null) ? keyCodec.fromJson(key) : key;
+    var deserializedValue = valueCodec != null ? valueCodec.fromJson(value) : value;
+    consumer.consume(new ConsumerRecord(correctionTopic, 0, 0, deserializedKey, deserializedValue));
   }
 
   public void retry(KafkaOpsRequest kafkaOpsRequest) {
@@ -81,14 +81,20 @@ public class KafkaOpsService {
   public Optional<KafkaPollResponse> poll(String topic, int partition, long offset) {
     var entry = this.registry.find(topic);
     var consumer = entry.getValue();
+    var registeredConsumer = entry.getKey();
+    var keyCodec = registeredConsumer.getKeyCodec();
+    var valueCodec = registeredConsumer.getValueCodec();
     Optional<ConsumerRecord> consumerRecord = manualKafkaConsumer.poll(topic, partition, offset, consumer);
-    return consumerRecord.map(this::toKafkaPollResponse);
+    return consumerRecord.map(cr -> toKafkaPollResponse(cr, keyCodec, valueCodec));
   }
 
   public KafkaOpsBatchResponse batchPoll(String topicName, Integer partition, Long startOffset,
                                          Long startTimestamp, int limit) {
     var entry = this.registry.find(topicName);
     var consumer = entry.getValue();
+    var registeredConsumer = entry.getKey();
+    var keyCodec = registeredConsumer.getKeyCodec();
+    var valueCodec = registeredConsumer.getValueCodec();
     var cappedLimit = Math.min(limit, batchMaxLimit);
 
     List<ConsumerRecord> records;
@@ -99,29 +105,30 @@ public class KafkaOpsService {
     }
 
     var batchRecords = records.stream()
-        .map(this::toBatchRecord)
+        .map(r -> toBatchRecord(r, keyCodec, valueCodec))
         .toList();
 
     var hasMore = batchRecords.size() >= cappedLimit;
     return new KafkaOpsBatchResponse(batchRecords, hasMore);
   }
 
-  private KafkaOpsBatchResponse.KafkaOpsBatchRecord toBatchRecord(ConsumerRecord<String, ?> record) {
+  private KafkaOpsBatchResponse.KafkaOpsBatchRecord toBatchRecord(ConsumerRecord record,
+                                                                   ValueCodec keyCodec, ValueCodec valueCodec) {
     return new KafkaOpsBatchResponse.KafkaOpsBatchRecord(
         record.partition(),
         record.offset(),
         record.timestamp(),
-        record.key(),
-        recordValueAsString(record),
+        keyAsString(record, keyCodec),
+        recordValueAsString(record, valueCodec),
         extractHeaders(record)
     );
   }
 
-  private KafkaPollResponse toKafkaPollResponse(ConsumerRecord consumerRecord) {
-    var key = consumerRecord.key() != null ? String.valueOf(consumerRecord.key()) : null;
+  private KafkaPollResponse toKafkaPollResponse(ConsumerRecord consumerRecord,
+                                                 ValueCodec keyCodec, ValueCodec valueCodec) {
     return new KafkaPollResponse(
-        recordValueAsString(consumerRecord),
-        key,
+        recordValueAsString(consumerRecord, valueCodec),
+        keyAsString(consumerRecord, keyCodec),
         consumerRecord.partition(),
         consumerRecord.offset(),
         consumerRecord.timestamp(),
@@ -150,16 +157,27 @@ public class KafkaOpsService {
     return headers;
   }
 
+  @SuppressWarnings("unchecked")
+  private String keyAsString(ConsumerRecord consumerRecord, ValueCodec keyCodec) {
+    return keyCodec != null ? keyCodec.toJson(consumerRecord.key()) : toJsonString(consumerRecord.key());
+  }
+
+  @SuppressWarnings("unchecked")
+  private String recordValueAsString(ConsumerRecord consumerRecord, ValueCodec codec) {
+    return codec != null ? codec.toJson(consumerRecord.value()) : toJsonString(consumerRecord.value());
+  }
+
+  /**
+   * Auto-detect serialization: converts any object to a JSON string.
+   * Used for both keys and value fallback when no {@link ValueCodec} is declared.
+   */
   @SneakyThrows
-  private String recordValueAsString(ConsumerRecord<String, ?> consumerRecord) {
-    Object value = consumerRecord.value();
-    if (value instanceof GenericContainer) {
-      return avroToJson((GenericContainer) value);
-    } else if (value instanceof String) {
-      return (String) value;
-    } else {
-      return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(value);
-    }
+  private String toJsonString(Object value) {
+    if (value == null) return null;
+    if (value instanceof String s) return s;
+    if (value instanceof GenericContainer avro) return AvroUtil.avroToJson(avro);
+    if (value instanceof MessageOrBuilder proto) return JsonFormat.printer().print(proto);
+    return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(value);
   }
 
   public static class NoConsumerFoundException extends RuntimeException {

@@ -38,7 +38,9 @@ class KafkaOpsControllerTest {
   private static final String RETRY_CONSUMER_API_URI = "/operational/consumer-retries";
   private static final String CORRECTIONS_API_URI = RETRY_CONSUMER_API_URI + "/corrections";
   private static final String DLT_ROUTING_API_URI = RETRY_CONSUMER_API_URI + "/dlt-routing";
-  private static final String CORRECTIONS_PAYLOAD_ONLY = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
+  private static final String CORRECTIONS_VALUE = "{\"name\":\"junit\",\"desc\":\"serialise!\"}";
+  private static final String CORRECTIONS_REQUEST_BODY =
+      "{\"key\":null,\"value\":\"{\\\"name\\\":\\\"junit\\\",\\\"desc\\\":\\\"serialise!\\\"}\"}";
 
   @Autowired
   private MockMvc mockMvc;
@@ -310,24 +312,23 @@ class KafkaOpsControllerTest {
   void testCorrectionsWithTopicInPathHappyPath() {
 
     // prepare
-    doNothing().when(service).process(anyString(), anyString());
+    doNothing().when(service).process(anyString(), any(), anyString());
 
     // when
     this.mockMvc.perform(post(CORRECTIONS_API_URI + "/topic_name").contentType(MediaType.APPLICATION_JSON)
-            .content(CORRECTIONS_PAYLOAD_ONLY))
+            .content(CORRECTIONS_REQUEST_BODY))
         .andDo(print())
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.id").exists());
+
+    verify(service).process(eq("topic_name"), isNull(), eq(CORRECTIONS_VALUE));
   }
 
   @Test
   @SneakyThrows
   @DisplayName("corrections end point with topic in the path should fail with empty request")
   void testCorrectionsWithTopicInPathInvalidRequest() {
-
-    // prepare
-    doNothing().when(service).process(anyString(), anyString());
 
     // when
     this.mockMvc.perform(post(CORRECTIONS_API_URI + "/topic_name").contentType(MediaType.APPLICATION_JSON)
@@ -342,11 +343,11 @@ class KafkaOpsControllerTest {
   void testCorrectionsWithTopicInPathThrowsException() {
 
     // prepare
-    doThrow(new RuntimeException("schema mismatch")).when(service).process(anyString(), anyString());
+    doThrow(new RuntimeException("schema mismatch")).when(service).process(anyString(), any(), anyString());
 
     // when
     this.mockMvc.perform(post(CORRECTIONS_API_URI + "/topic_name").contentType(MediaType.APPLICATION_JSON)
-            .content(CORRECTIONS_PAYLOAD_ONLY))
+            .content(CORRECTIONS_REQUEST_BODY))
         .andDo(print())
         .andExpect(status().is5xxServerError())
         .andExpect(jsonPath("$.message").value("schema mismatch"));
@@ -358,14 +359,33 @@ class KafkaOpsControllerTest {
   void testCorrectionsWithTopicInPath404() {
 
     // prepare
-    doThrow(new NoConsumerFoundException("consumer missing")).when(service).process(anyString(), anyString());
+    doThrow(new NoConsumerFoundException("consumer missing")).when(service).process(anyString(), any(), anyString());
 
     // when
     this.mockMvc.perform(post(CORRECTIONS_API_URI + "/topic_name").contentType(MediaType.APPLICATION_JSON)
-            .content(CORRECTIONS_PAYLOAD_ONLY))
+            .content(CORRECTIONS_REQUEST_BODY))
         .andDo(print())
         .andExpect(status().is4xxClientError())
         .andExpect(jsonPath("$.message").value("consumer missing"));
+  }
+
+  @Test
+  @SneakyThrows
+  @DisplayName("corrections should pass key and value when both are provided")
+  void testCorrectionsWithKeyAndValue() {
+
+    // prepare
+    var requestBody = "{\"key\":\"order-123\",\"value\":\"{\\\"name\\\":\\\"junit\\\"}\"}";
+    doNothing().when(service).process(anyString(), anyString(), anyString());
+
+    // when
+    this.mockMvc.perform(post(CORRECTIONS_API_URI + "/topic_name").contentType(MediaType.APPLICATION_JSON)
+            .content(requestBody))
+        .andDo(print())
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.id").exists());
+
+    verify(service).process(eq("topic_name"), eq("order-123"), eq("{\"name\":\"junit\"}"));
   }
 
   @Test

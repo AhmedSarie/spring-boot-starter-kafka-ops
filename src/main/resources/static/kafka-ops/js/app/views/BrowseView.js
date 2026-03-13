@@ -15,11 +15,13 @@ var BrowseView = (function () {
         /* Per-expanded-row actions */
         retrying: false,
         showEditor: false,
+        correctionKey: '',
         correctionValue: '',
         sending: false,
         jsonError: false,
         showDiffModal: false,
-        headersExpanded: false
+        headersExpanded: false,
+        keyExpanded: false
     };
 
     var anyBusy = function () { return state.loading || state.retrying || state.sending; };
@@ -37,6 +39,34 @@ var BrowseView = (function () {
         max = max || 60;
         if (!str) return '';
         return str.length > max ? str.slice(0, max) + '...' : str;
+    }
+
+    function isJsonLike(str) {
+        if (!str) return false;
+        var trimmed = str.trim();
+        return (trimmed.charAt(0) === '{' || trimmed.charAt(0) === '[');
+    }
+
+    function renderKeySection(record) {
+        var keyStr = record.key;
+        if (!keyStr) return null;
+        if (isJsonLike(keyStr)) {
+            return m('.result-headers', [
+                m('span.result-label.headers-toggle', {
+                    onclick: function (e) {
+                        e.stopPropagation();
+                        state.keyExpanded = !state.keyExpanded;
+                    },
+                    style: 'cursor:pointer'
+                }, 'Key ' + (state.keyExpanded ? '\u25BC' : '\u25B6')),
+                state.keyExpanded
+                    ? m(JsonViewer, { data: keyStr, instanceKey: 'key:' + record.partition + ':' + record.offset })
+                    : null
+            ]);
+        }
+        return m('.result-metadata', [
+            m('span.meta-badge.meta-badge-key', 'Key: ' + keyStr)
+        ]);
     }
 
     function datetimeToEpoch(dtStr) {
@@ -137,6 +167,7 @@ var BrowseView = (function () {
             state.showEditor = false;
             state.jsonError = false;
             state.headersExpanded = false;
+            state.keyExpanded = false;
         }
     }
 
@@ -153,6 +184,12 @@ var BrowseView = (function () {
     }
 
     function openEditorForRecord(record) {
+        var keyStr = record.key || '';
+        if (isJsonLike(keyStr)) {
+            try { state.correctionKey = JSON.stringify(JSON.parse(keyStr), null, 2); } catch (e) { state.correctionKey = keyStr; }
+        } else {
+            state.correctionKey = keyStr;
+        }
         try {
             state.correctionValue = JSON.stringify(JSON.parse(record.value), null, 2);
         } catch (e) {
@@ -187,8 +224,9 @@ var BrowseView = (function () {
     function confirmSendCorrection() {
         state.showDiffModal = false;
         state.sending = true;
+        var key = state.correctionKey.trim();
         var payload = state.correctionValue.trim();
-        Api.sendCorrection(state.topic, payload).then(function (data) {
+        Api.sendCorrection(state.topic, key, payload).then(function (data) {
             var id = data && data.id ? data.id.slice(0, 8) + '...' : '';
             Toast.success('Correction sent' + (id ? ' — ID: ' + id : ''));
             state.showEditor = false;
@@ -224,10 +262,12 @@ var BrowseView = (function () {
         state.expandedKey = null;
         state.retrying = false;
         state.showEditor = false;
+        state.correctionKey = '';
         state.correctionValue = '';
         state.sending = false;
         state.jsonError = false;
         state.showDiffModal = false;
+        state.keyExpanded = false;
     }
 
     return {
@@ -419,10 +459,11 @@ var BrowseView = (function () {
                                             m('.result-metadata', [
                                                 m('span.meta-badge', 'P' + record.partition),
                                                 m('span.meta-badge', 'O' + record.offset),
-                                                record.timestamp ? m('span.meta-badge', formatTimestamp(record.timestamp)) : null,
-                                                record.key ? m('span.meta-badge.meta-badge-key', { title: record.key },
-                                                    'Key: ' + truncate(record.key, 30)) : null
+                                                record.timestamp ? m('span.meta-badge', formatTimestamp(record.timestamp)) : null
                                             ]),
+
+                                            /* Key (expandable for JSON, inline badge for simple) */
+                                            renderKeySection(record),
 
                                             /* Headers (collapsible) */
                                             record.headers && Object.keys(record.headers).length > 0
@@ -490,6 +531,16 @@ var BrowseView = (function () {
                                                         'aria-label': 'Close'
                                                     }, m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'))
                                                 ]),
+                                                state.correctionKey ? m('label', { style: 'margin-bottom:0.25rem;font-weight:600' }, 'Key') : null,
+                                                state.correctionKey ? m('textarea.correction-textarea', {
+                                                    value: state.correctionKey,
+                                                    oninput: function (e) { state.correctionKey = e.target.value; },
+                                                    spellcheck: false,
+                                                    rows: 3,
+                                                    style: 'min-height:3rem',
+                                                    onclick: function (e) { e.stopPropagation(); }
+                                                }) : null,
+                                                m('label', { style: 'margin-bottom:0.25rem;' + (state.correctionKey ? 'margin-top:0.75rem;' : '') + 'font-weight:600' }, 'Value'),
                                                 m('textarea.correction-textarea', {
                                                     value: state.correctionValue,
                                                     oninput: function (e) { state.correctionValue = e.target.value; },
@@ -543,8 +594,10 @@ var BrowseView = (function () {
 
                 // Diff confirmation modal
                 state.showDiffModal && expandedRecord ? m(DiffModal, {
-                    original: expandedRecord.value,
-                    edited: state.correctionValue.trim(),
+                    originalKey: expandedRecord.key || '',
+                    editedKey: state.correctionKey.trim(),
+                    originalValue: expandedRecord.value,
+                    editedValue: state.correctionValue.trim(),
                     onConfirm: confirmSendCorrection,
                     onCancel: cancelDiffModal
                 }) : null
