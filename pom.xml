@@ -10,7 +10,7 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
-    <groupId>io.github.ays</groupId>
+    <groupId>io.github.ahmedsarie</groupId>
     <artifactId>spring-boot-starter-kafka-ops</artifactId>
     <version>0.1.7-SNAPSHOT</version>
     <packaging>jar</packaging>
