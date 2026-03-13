@@ -1,32 +1,20 @@
 # Spring Boot Starter Kafka Ops
 
-A Spring Boot starter that adds REST endpoints and an embedded web console to your service for Kafka message operations — poll, retry, corrections, batch browse, and DLT routing — without any extra infrastructure.
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.ahmedsarie/spring-boot-starter-kafka-ops)](https://central.sonatype.com/artifact/io.github.ahmedsarie/spring-boot-starter-kafka-ops)
+[![CI](https://github.com/AhmedSarie/spring-boot-starter-kafka-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmedSarie/spring-boot-starter-kafka-ops/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## What it does
+A Spring Boot starter that adds REST endpoints and an embedded web console for Kafka message operations — poll, retry, corrections, batch browse, and DLT routing — without any extra infrastructure.
 
-When your Kafka consumer fails to process a message, you typically need to manually re-consume it or write custom tooling. This starter gives you that tooling out of the box:
+- **Poll & browse** — Inspect messages by offset or timestamp with full metadata (key, headers, timestamp)
+- **Retry** — Re-consume a failed message through your existing consumer logic
+- **Correct** — Edit a payload and send it directly to your consumer
+- **DLT routing** — Automatically drain Dead Letter Topics back to retry topics
+- **Web console** — Browser-based UI embedded in your service, no separate deployment
+- **Zero config** — Auto-discovers your consumers at startup, uses your app's own serialization
 
-- **Poll** — Inspect a message at a specific topic/partition/offset with full metadata (key, headers, timestamp)
-- **Batch browse** — Browse multiple messages by offset range or timestamp
-- **Retry** — Re-consume a message through your existing consumer logic
-- **Correct** — Edit and send a corrected payload directly to your consumer
-- **DLT routing** — Route messages from a Dead Letter Topic back to the retry topic automatically
-- **Web Console** — Browser-based UI with no separate deployment needed
-
-## Web Console
-
-The library ships an embedded web UI at `/kafka-ops/index.html` — no separate deployment, no CDN, works fully offline.
-
-**Features:**
-- **Consumer sidebar** — Tree layout showing main → DLT → retry topics. Resizable for long topic names. Shows DLT routing config (cron, max cycles, idle timeout) when enabled.
-- **Topic dashboard** — Partition count and message count badges displayed in the topic heading
-- **Poll view** — Poll by partition/offset with full metadata badges (key, timestamp, headers) and a collapsible JSON tree viewer
-- **Batch browse** — Browse messages by timestamp (defaults to last hour) or partition/offset with an expandable results table and collapsible headers
-- **Retry & Correct** — One-click retry or edit JSON and send corrections with diff confirmation popup
-- **Drain DLT** — Start DLT routing directly from the sidebar for any configured DLT topic
-- **Poll history** — Last 10 partition/offset pairs per topic in both Poll and Browse views, persisted across browser sessions
-
-The console uses [Mithril.js](https://mithril.js.org) and [Pico CSS](https://picocss.com), both vendored in the JAR. No Node.js, no npm, no build step, no runtime internet required.
+<!-- TODO: Add console screenshot -->
+<!-- ![Console](docs/assets/console-screenshot.png) -->
 
 ## Installation
 
@@ -44,24 +32,20 @@ The console uses [Mithril.js](https://mithril.js.org) and [Pico CSS](https://pic
 implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.1.7")
 ```
 
-## Usage
+## Quick Start
 
-### 1. Enable the REST API and console
+**1. Enable the API and console:**
 
 ```yaml
 kafka:
   ops:
     rest-api:
-      enabled: true    # REST endpoints for programmatic access
+      enabled: true
     console:
-      enabled: true    # Web console UI
+      enabled: true
 ```
 
-The REST API and console can be enabled independently. The console requires the REST API to also be enabled — it calls the same endpoints under the hood.
-
-### 2. Implement `KafkaOpsAwareConsumer` on your Kafka consumers
-
-**Minimal (topic name only):**
+**2. Implement `KafkaOpsAwareConsumer` on your Kafka consumer:**
 
 ```java
 @Service
@@ -80,210 +64,23 @@ public class OrderConsumer implements KafkaOpsAwareConsumer<String, OrderEvent> 
 }
 ```
 
-**With DLT and retry topics:**
+**3. Open the console** at [http://localhost:8080/kafka-ops/index.html](http://localhost:8080/kafka-ops/index.html)
 
-```java
-@Override
-public TopicConfig getTopic() {
-    return TopicConfig.of("orders")
-        .withDlt("orders.DLT")
-        .withRetry("orders-retry");
-}
-```
+## Documentation
 
-Declaring `withDlt()` and `withRetry()` enables DLT routing via the API: route messages from `orders.DLT` back to `orders-retry` for reprocessing.
+Full documentation is available at **[ahmedsarie.github.io/spring-boot-starter-kafka-ops](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops)**:
 
-**Kotlin:**
-```kotlin
-@Service
-class OrderConsumer : KafkaOpsAwareConsumer<String, OrderEvent> {
-
-    @KafkaListener(topics = ["orders"])
-    override fun consume(record: ConsumerRecord<String, OrderEvent>) {
-        // your existing consumer logic
-    }
-
-    override fun getTopic() = TopicConfig.of("orders")
-}
-```
-
-### 3. Open the console
-
-Navigate to `http://localhost:8080/kafka-ops/index.html` — select a consumer from the sidebar to start polling or browsing.
-
-## REST Endpoints
-
-All endpoints are served at a configurable base path (default: `/operational/consumer-retries`).
-
-### List registered consumers
-```
-GET /operational/consumer-retries/consumers
-```
-Returns structured consumer info including partition counts, message counts, and DLT/retry sub-topics.
-
-```json
-[
-  {
-    "name": "orders",
-    "partitions": 3,
-    "messageCount": 1500,
-    "dlt": { "name": "orders.DLT", "partitions": 3, "messageCount": 12 },
-    "retry": { "name": "orders-retry", "partitions": 3, "messageCount": 0 }
-  }
-]
-```
-
-### Poll a message
-```
-GET /operational/consumer-retries?topicName=orders&partition=0&offset=42
-```
-Returns the message with full metadata:
-```json
-{
-  "consumerRecordValue": "{\"orderId\": \"123\"}",
-  "key": "order-key",
-  "partition": 0,
-  "offset": 42,
-  "timestamp": 1700000000000,
-  "headers": { "traceid": "abc-123" }
-}
-```
-
-### Batch browse
-```
-GET /operational/consumer-retries/batch?topicName=orders&partition=0&startOffset=100&limit=20
-GET /operational/consumer-retries/batch?topicName=orders&startTimestamp=1700000000000&limit=20
-```
-Provide either `partition` + `startOffset`, or `startTimestamp` — not both. Returns whatever records are available up to `limit`; if fewer exist, it returns what it finds without waiting.
-
-```json
-{
-  "records": [
-    { "partition": 0, "offset": 100, "timestamp": 1700000000000, "key": "k1", "value": "...", "headers": {} }
-  ],
-  "hasMore": false
-}
-```
-
-### Retry a message
-```
-POST /operational/consumer-retries
-Content-Type: application/json
-
-{"topic": "orders", "partition": 0, "offset": 42}
-```
-Re-consumes the message through your consumer's `consume()` method.
-
-### Send a correction
-```
-POST /operational/consumer-retries/corrections/orders
-Content-Type: application/json
-
-{"orderId": "123", "status": "corrected"}
-```
-Sends the payload directly to your consumer without reading from Kafka.
-
-### Start DLT routing
-```
-POST /operational/consumer-retries/dlt-routing/orders/start
-```
-Starts routing messages from `orders.DLT` → `orders-retry`. Requires `kafka.ops.dlt-routing.enabled=true` and the consumer to declare both `withDlt()` and `withRetry()` on its `TopicConfig`.
-
-The router uses a fixed consumer group (`{group-id}-dlt-router`) so it is safe in multi-pod deployments — the broker handles partition assignment across pods. Only messages that existed before the trigger time are routed; newer messages are left for the next run. The router stops automatically after the topic is idle (configurable), and restarts periodically via cron to catch new DLT messages.
-
-Each time a message is routed from DLT → retry, the router stamps a `kafka-ops-dlt-cycle` header and increments it on every cycle. Once the cycle count reaches `max-cycles`, the message is skipped (acknowledged without routing) to prevent infinite loops.
-
-**Tuning automatic retry duration:** The total time a message keeps being retried automatically is roughly `max-cycles × restart-cron interval`. For example, with `max-cycles=10` and `restart-cron` set to every 6 hours (`0 0 */6 * * *`), a message is retried for up to ~2.5 days before being permanently skipped. To stop retries sooner, deploy with fewer cycles or a higher cron frequency. To discard DLT data immediately, involve Kafka admins to delete the topic data or adjust the topic retention policy.
-
-**DLT header handling:** Spring Kafka's `DeadLetterPublishingRecoverer` writes headers like `kafka_dlt-original-offset`, `kafka_dlt-original-partition`, and `kafka_dlt-original-timestamp` as binary (BigEndian int/long). The library automatically decodes these into readable numbers in both the API responses and the console. The `kafka_dlt-exception-stacktrace` header is filtered out from responses to keep payloads compact.
-
-### Console config (used by the UI)
-```
-GET /kafka-ops/api/config
-```
-Returns the configured API base path and DLT routing settings so the UI can resolve endpoints and display configuration dynamically.
-
-## Configuration
-
-| Property                                      | Default                        | Description                                                                                                                |
-|-----------------------------------------------|--------------------------------|----------------------------------------------------------------------------------------------------------------------------|
-| `kafka.ops.rest-api.enabled`                  | `false`                        | Enable the REST endpoints                                                                                                  |
-| `kafka.ops.console.enabled`                   | `false`                        | Enable the web console UI                                                                                                  |
-| `kafka.ops.rest-api.retry-endpoint-url`       | `operational/consumer-retries` | Base path for all REST endpoints                                                                                           |
-| `kafka.ops.group-id`                          | `default-ops-group-id`         | Consumer group ID used for polling                                                                                         |
-| `kafka.ops.max-poll-interval-ms`              | `5000`                         | Timeout for single-message poll                                                                                            |
-| `kafka.ops.batch.max-limit`                   | `100`                          | Maximum records returned by batch browse                                                                                   |
-| `kafka.ops.dlt-routing.enabled`               | `false`                        | Enable the DLT router bean                                                                                                 |
-| `kafka.ops.dlt-routing.idle-shutdown-seconds` | `10`                           | Stop the router after this many seconds with no new DLT messages                                                           |
-| `kafka.ops.dlt-routing.restart-cron`          | `0 */30 * * * *`               | Cron expression controlling when the router restarts to check for new DLT messages. Use `-` to disable automatic restarts. |
-| `kafka.ops.dlt-routing.max-cycles`            | `10`                           | Skip a DLT message after it has been routed this many times (prevents infinite loops)                                      |
-
-## Value format support
-
-The library auto-detects common value types (String, Avro, Protobuf, Jackson-serializable POJOs) for poll and browse responses. For the **corrections endpoint**, which needs to deserialize JSON back into your value type, override `getValueCodec()`:
-
-**Avro:**
-
-```java
-@Override
-public ValueCodec<OrderEvent> getValueCodec() {
-    return new AvroValueCodec<>(OrderEvent.getClassSchema());
-}
-```
-
-Requires `org.apache.avro:avro` on the classpath (the library declares it as `provided`).
-
-**Protobuf:**
-
-```java
-@Override
-public ValueCodec<OrderEvent> getValueCodec() {
-    return new ProtoValueCodec<>(OrderEvent.getDefaultInstance());
-}
-```
-
-Requires `com.google.protobuf:protobuf-java` and `com.google.protobuf:protobuf-java-util` on the classpath (both declared as `provided`).
-
-**Custom formats:**
-
-Implement `ValueCodec<T>` directly:
-
-```java
-public class ThriftValueCodec<T> implements ValueCodec<T> {
-    @Override public String toJson(T value) { /* serialize to JSON */ }
-    @Override public T fromJson(String json) { /* deserialize from JSON */ }
-}
-```
-
-Then declare it via `getValueCodec()` and/or `getKeyCodec()` on your consumer.
-
-**Key serialization** is auto-detected for built-in types (String, Avro, Protobuf, Jackson POJOs). For custom key types, override `getKeyCodec()`:
-
-```java
-@Override
-public ValueCodec<MyCustomKey> getKeyCodec() {
-    return new MyCustomKeyCodec();
-}
-```
-
-## Custom container factory
-
-If your consumer uses a custom `KafkaListenerContainerFactory`, override `getContainer()` so the library resolves the correct deserializer configuration:
-
-```java
-@Override
-public ContainerConfig getContainer() {
-    return ContainerConfig.of("myCustomContainerFactory");
-}
-```
+- [Getting Started](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/getting-started/) — Installation and setup
+- [Configuration](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/configuration/) — All available properties
+- [REST API](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/rest-api/) — Full endpoint reference
+- [Web Console](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/console/) — Console features
+- [DLT Routing](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/dlt-routing/) — Dead Letter Topic routing
+- [Message Formats](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/value-formats/) — Avro, Protobuf, custom key and value codecs
+- [Security](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/security/) — Securing endpoints and console
 
 ## Security
 
-The library does not provide authentication, authorization, or CSRF protection. Secure the endpoints and console using your application's existing security infrastructure (Spring Security, API gateway, etc.) — the same way you would secure Swagger UI or Spring Boot Actuator.
-
-If your application uses Spring Security with CSRF protection (enabled by default), the POST endpoints will require a valid CSRF token. If your application does not use Spring Security, consider restricting access to these endpoints to trusted networks since they perform state-changing operations.
-
-The console's static files (`/kafka-ops/**`) are served by Spring Boot's default resource handler whenever the library is on the classpath. The API endpoints require `kafka.ops.rest-api.enabled=true`, so the console UI is non-functional without that property — but the static HTML/JS/CSS files remain accessible. To fully block access, use Spring Security to restrict `/kafka-ops/**`.
+This library does not provide its own authentication or authorization. Secure the endpoints and console using your application's existing security infrastructure (Spring Security, API gateway, etc.). See the [security guide](https://ahmedsarie.github.io/spring-boot-starter-kafka-ops/security/) for details.
 
 ## Development
 

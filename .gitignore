@@ -51,3 +51,6 @@ SESSION_CONTEXT.md
 ### Logs ###
 *.log
 logs/
+
+### MkDocs ###
+site/
