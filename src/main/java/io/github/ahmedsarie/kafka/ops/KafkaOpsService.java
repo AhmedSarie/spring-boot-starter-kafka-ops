@@ -50,16 +50,15 @@ public class KafkaOpsService {
   }
 
   @SuppressWarnings("unchecked")
-  public void process(String topic, String payload) {
+  public void process(String topic, String key, String value) {
     var entry = this.registry.find(topic);
     var consumer = entry.getKey();
-    var codec = consumer.getValueCodec();
+    var valueCodec = consumer.getValueCodec();
+    var keyCodec = consumer.getKeyCodec();
     var correctionTopic = topic + "-correction";
-    if (codec != null) {
-      consumer.consume(new ConsumerRecord(correctionTopic, 0, 0, null, codec.fromJson(payload)));
-    } else {
-      consumer.consume(new ConsumerRecord(correctionTopic, 0, 0, null, payload));
-    }
+    var deserializedKey = (key != null && keyCodec != null) ? keyCodec.fromJson(key) : key;
+    var deserializedValue = valueCodec != null ? valueCodec.fromJson(value) : value;
+    consumer.consume(new ConsumerRecord(correctionTopic, 0, 0, deserializedKey, deserializedValue));
   }
 
   public void retry(KafkaOpsRequest kafkaOpsRequest) {

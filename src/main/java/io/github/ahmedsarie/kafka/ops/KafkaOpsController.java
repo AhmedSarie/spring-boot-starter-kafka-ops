@@ -100,16 +100,20 @@ class KafkaOpsController {
   }
 
   @PostMapping("/corrections/{kafka_topic}")
-  public ResponseEntity<?> correct(@RequestBody String payload, @PathVariable("kafka_topic") String kafkaTopic) {
+  public ResponseEntity<?> correct(@RequestBody KafkaOpsCorrectionRequest request,
+                                   @PathVariable("kafka_topic") String kafkaTopic) {
 
-    if (payload.length() > MAX_PAYLOAD_SIZE) {
+    if (request.getValue() == null) {
+      throw new IllegalArgumentException("Correction value must not be null");
+    }
+    if (request.getValue().length() > MAX_PAYLOAD_SIZE) {
       throw new IllegalArgumentException("Payload size exceeds maximum allowed size of " + MAX_PAYLOAD_SIZE + " bytes");
     }
     var id = UUID.randomUUID().toString();
     MDC.put("api-response-id", id);
     try {
       log.info(format("Correction started for topic=%s", kafkaTopic));
-      kafkaOpsService.process(kafkaTopic, payload);
+      kafkaOpsService.process(kafkaTopic, request.getKey(), request.getValue());
       return ResponseEntity.ok(new KafkaOpsResponse(id));
     } finally {
       log.info("Correction finished");

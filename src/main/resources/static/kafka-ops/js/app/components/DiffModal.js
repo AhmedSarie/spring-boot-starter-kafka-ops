@@ -83,6 +83,59 @@ var DiffModal = (function () {
         return { changed: changed, added: added, removed: removed };
     }
 
+    /* Render changed/added/removed tables for a diff result */
+    function renderDiffSection(diff) {
+        var nodes = [];
+        if (diff.changed.length > 0) {
+            nodes.push(m('span.diff-section-label', 'Changed'));
+            nodes.push(m('table.diff-table', [
+                m('thead', m('tr', [
+                    m('th', 'Field'),
+                    m('th', 'Was'),
+                    m('th', 'Now')
+                ])),
+                m('tbody', diff.changed.map(function (d) {
+                    return m('tr', { key: d.field }, [
+                        m('td.diff-field', d.field),
+                        m('td.diff-was', truncate(d.was)),
+                        m('td.diff-now', truncate(d.now))
+                    ]);
+                }))
+            ]));
+        }
+        if (diff.added.length > 0) {
+            nodes.push(m('span.diff-section-label', 'Added'));
+            nodes.push(m('table.diff-table', [
+                m('thead', m('tr', [
+                    m('th', 'Field'),
+                    m('th', 'Value')
+                ])),
+                m('tbody', diff.added.map(function (d) {
+                    return m('tr', { key: d.field }, [
+                        m('td.diff-field', d.field),
+                        m('td.diff-now', truncate(d.now))
+                    ]);
+                }))
+            ]));
+        }
+        if (diff.removed.length > 0) {
+            nodes.push(m('span.diff-section-label', 'Removed'));
+            nodes.push(m('table.diff-table', [
+                m('thead', m('tr', [
+                    m('th', 'Field'),
+                    m('th', 'Value')
+                ])),
+                m('tbody', diff.removed.map(function (d) {
+                    return m('tr', { key: d.field }, [
+                        m('td.diff-field', d.field),
+                        m('td.diff-was', truncate(d.was))
+                    ]);
+                }))
+            ]));
+        }
+        return nodes;
+    }
+
     function closeAndRestoreFocus(onCancel) {
         onCancel();
         if (previousFocus) previousFocus.focus();
@@ -103,15 +156,27 @@ var DiffModal = (function () {
         },
 
         view: function (vnode) {
-            var original = vnode.attrs.original;
-            var edited = vnode.attrs.edited;
             var onConfirm = vnode.attrs.onConfirm;
             var onCancel = vnode.attrs.onCancel;
 
-            var diff = computeDiff(original, edited);
-            var totalChanges = diff
-                ? diff.changed.length + diff.added.length + diff.removed.length
+            /* Support both legacy (original/edited) and new (originalKey/editedKey + originalValue/editedValue) */
+            var originalValue = vnode.attrs.originalValue !== undefined ? vnode.attrs.originalValue : vnode.attrs.original;
+            var editedValue = vnode.attrs.editedValue !== undefined ? vnode.attrs.editedValue : vnode.attrs.edited;
+            var originalKey = vnode.attrs.originalKey || null;
+            var editedKey = vnode.attrs.editedKey || null;
+
+            var valueDiff = computeDiff(originalValue, editedValue);
+            var valueTotalChanges = valueDiff
+                ? valueDiff.changed.length + valueDiff.added.length + valueDiff.removed.length
                 : 0;
+
+            var keyChanged = originalKey !== null && editedKey !== null && originalKey !== editedKey;
+            var keyDiff = keyChanged ? computeDiff(originalKey, editedKey) : null;
+            var keyTotalChanges = keyDiff
+                ? keyDiff.changed.length + keyDiff.added.length + keyDiff.removed.length
+                : 0;
+
+            var hasAnyChanges = valueTotalChanges > 0 || keyTotalChanges > 0;
 
             return m('.diff-overlay', {
                 role: 'dialog',
@@ -145,76 +210,39 @@ var DiffModal = (function () {
                     m('.diff-modal-header', 'Review Changes Before Sending'),
 
                     m('.diff-modal-body', [
-                        !diff ? m('p.diff-error', 'Unable to compare — invalid JSON.') : null,
+                        !valueDiff ? m('p.diff-error', 'Unable to compare — invalid JSON.') : null,
 
-                        diff && totalChanges === 0
+                        valueDiff && !hasAnyChanges
                             ? m('p.diff-none', 'No changes detected.')
                             : null,
 
-                        diff && diff.changed.length > 0 ? [
-                            m('span.diff-section-label', 'Changed'),
-                            m('table.diff-table', [
-                                m('thead', m('tr', [
-                                    m('th', 'Field'),
-                                    m('th', 'Was'),
-                                    m('th', 'Now')
-                                ])),
-                                m('tbody', diff.changed.map(function (d) {
-                                    return m('tr', { key: d.field }, [
-                                        m('td.diff-field', d.field),
-                                        m('td.diff-was', truncate(d.was)),
-                                        m('td.diff-now', truncate(d.now))
-                                    ]);
-                                }))
-                            ])
+                        /* Key changes section (only shown if key was actually changed) */
+                        keyDiff && keyTotalChanges > 0 ? [
+                            m('span.diff-section-label', { style: 'font-weight:bold' }, 'Key Changes'),
+                            renderDiffSection(keyDiff)
                         ] : null,
 
-                        diff && diff.added.length > 0 ? [
-                            m('span.diff-section-label', 'Added'),
-                            m('table.diff-table', [
-                                m('thead', m('tr', [
-                                    m('th', 'Field'),
-                                    m('th', 'Value')
-                                ])),
-                                m('tbody', diff.added.map(function (d) {
-                                    return m('tr', { key: d.field }, [
-                                        m('td.diff-field', d.field),
-                                        m('td.diff-now', truncate(d.now))
-                                    ]);
-                                }))
-                            ])
+                        /* Value changes section */
+                        valueDiff && valueTotalChanges > 0 ? [
+                            keyDiff && keyTotalChanges > 0
+                                ? m('span.diff-section-label', { style: 'font-weight:bold;margin-top:1rem;display:block' }, 'Value Changes')
+                                : null,
+                            renderDiffSection(valueDiff)
                         ] : null,
 
-                        diff && diff.removed.length > 0 ? [
-                            m('span.diff-section-label', 'Removed'),
-                            m('table.diff-table', [
-                                m('thead', m('tr', [
-                                    m('th', 'Field'),
-                                    m('th', 'Value')
-                                ])),
-                                m('tbody', diff.removed.map(function (d) {
-                                    return m('tr', { key: d.field }, [
-                                        m('td.diff-field', d.field),
-                                        m('td.diff-was', truncate(d.was))
-                                    ]);
-                                }))
-                            ])
-                        ] : null,
-
-                        diff && totalChanges > 0 ? m('p.diff-summary', [
-                            diff.changed.length > 0 ? diff.changed.length + ' changed' : '',
-                            diff.changed.length > 0 && (diff.added.length > 0 || diff.removed.length > 0) ? ', ' : '',
-                            diff.added.length > 0 ? diff.added.length + ' added' : '',
-                            diff.added.length > 0 && diff.removed.length > 0 ? ', ' : '',
-                            diff.removed.length > 0 ? diff.removed.length + ' removed' : ''
-                        ].join('')) : null
+                        hasAnyChanges ? m('p.diff-summary', (function () {
+                            var parts = [];
+                            if (keyTotalChanges > 0) parts.push(keyTotalChanges + ' key field' + (keyTotalChanges !== 1 ? 's' : ''));
+                            if (valueTotalChanges > 0) parts.push(valueTotalChanges + ' value field' + (valueTotalChanges !== 1 ? 's' : ''));
+                            return parts.join(', ') + ' changed';
+                        })()) : null
                     ]),
 
                     m('.diff-modal-footer', [
                         m('button.btn.btn-outline[type=button]', { onclick: onCancel }, 'Cancel'),
                         m('button.btn.btn-primary[type=button]', {
                             onclick: onConfirm,
-                            disabled: !diff
+                            disabled: !valueDiff
                         }, 'Confirm & Send')
                     ])
                 ])
