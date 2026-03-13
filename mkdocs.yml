@@ -1,0 +1,55 @@
+site_name: Spring Boot Starter Kafka Ops
+site_description: REST endpoints and an embedded web console for Kafka message operations
+site_url: https://ahmedsarie.github.io/spring-boot-starter-kafka-ops
+repo_url: https://github.com/AhmedSarie/spring-boot-starter-kafka-ops
+repo_name: AhmedSarie/spring-boot-starter-kafka-ops
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.action.edit
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - REST API: rest-api.md
+  - Web Console: console.md
+  - DLT Routing: dlt-routing.md
+  - Message Formats: value-formats.md
+  - Custom Container Factory: custom-container-factory.md
+  - Security: security.md
+
+not_in_nav: |
+  /adr/
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - attr_list
