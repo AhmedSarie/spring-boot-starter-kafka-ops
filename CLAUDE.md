@@ -10,7 +10,7 @@
 
 ## Project Overview
 
-Spring Boot starter that provides REST endpoints for Kafka message operations (poll, retry, corrections). All classes live in `io.github.ahmedsarie.kafka.ops` — flat package, no subpackages for main sources.
+Spring Boot starter that provides REST endpoints for Kafka message operations (poll, retry, corrections). All classes live in `io.github.ays.kafka.ops` — flat package, no subpackages for main sources.
 
 ## Code Conventions
 
