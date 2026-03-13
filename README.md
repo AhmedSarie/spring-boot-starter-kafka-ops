@@ -33,7 +33,7 @@ The console uses [Mithril.js](https://mithril.js.org) and [Pico CSS](https://pic
 **Maven:**
 ```xml
 <dependency>
-    <groupId>io.github.ays</groupId>
+    <groupId>io.github.ahmedsarie</groupId>
     <artifactId>spring-boot-starter-kafka-ops</artifactId>
     <version>0.1.2</version>
 </dependency>
@@ -41,7 +41,7 @@ The console uses [Mithril.js](https://mithril.js.org) and [Pico CSS](https://pic
 
 **Gradle:**
 ```kotlin
-implementation("io.github.ays:spring-boot-starter-kafka-ops:0.1.2")
+implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.1.2")
 ```
 
 ## Usage
