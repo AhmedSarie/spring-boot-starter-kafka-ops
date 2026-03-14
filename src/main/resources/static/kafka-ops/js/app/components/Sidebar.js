@@ -1,6 +1,7 @@
-/* Consumer sidebar component — tree view with DLT/retry sub-topics */
+/* Consumer sidebar component — tree view with collapsible DLT/retry sub-topics */
 var Sidebar = {
     confirmDrain: null, /* { mainTopicName, dltName } when modal is open */
+    expandedGroups: {},  /* { consumerName: true } — collapsed by default */
 
     oninit: function () {
         var load = Api.basePath ? Promise.resolve() : Api.init();
@@ -24,15 +25,24 @@ var Sidebar = {
     },
 
     view: function () {
-        var currentRoute = m.route.get() || '/';
-        var routePrefix = currentRoute.indexOf('/browse') === 0 ? '/browse' : '/poll';
-
         function selectTopic(name) {
             AppState.selectedTopic = name;
-            m.route.set(routePrefix, { topic: name });
+            AppState.refreshConsumers();
+            m.route.set('/browse', { topic: name });
         }
 
-        function renderTopicItem(name, count, isActive, indent, extraContent) {
+        function hasSubTopics(consumer) {
+            return consumer.dlt || consumer.retry;
+        }
+
+        function isGroupExpanded(consumer) {
+            /* Auto-expand if a child topic is active */
+            if (consumer.dlt && AppState.selectedTopic === consumer.dlt.name) return true;
+            if (consumer.retry && AppState.selectedTopic === consumer.retry.name) return true;
+            return !!Sidebar.expandedGroups[consumer.name];
+        }
+
+        function renderTopicItem(name, isActive, indent, extraContent) {
             return m('.consumer-item' + (isActive ? '.active' : ''), {
                 key: name,
                 role: 'option',
@@ -88,69 +98,60 @@ var Sidebar = {
             /* Support legacy string format as fallback */
             if (typeof consumer === 'string') {
                 var isActive = AppState.selectedTopic === consumer;
-                return renderTopicItem(consumer, null, isActive, false);
+                return renderTopicItem(consumer, isActive, false);
             }
 
             var items = [];
             var isMainActive = AppState.selectedTopic === consumer.name;
+            var hasSubs = hasSubTopics(consumer);
+            var expanded = hasSubs && isGroupExpanded(consumer);
 
-            /* Main topic */
-            items.push(renderTopicItem(consumer.name, consumer.messageCount, isMainActive, false));
+            /* Main topic — click selects + toggles expand/collapse */
+            items.push(m('.consumer-item' + (isMainActive ? '.active' : ''), {
+                key: consumer.name,
+                role: 'option',
+                'aria-selected': isMainActive ? 'true' : 'false',
+                tabindex: '0',
+                title: consumer.name,
+                onclick: function () {
+                    selectTopic(consumer.name);
+                    if (hasSubs) {
+                        Sidebar.expandedGroups[consumer.name] = !Sidebar.expandedGroups[consumer.name];
+                    }
+                },
+                onkeydown: function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectTopic(consumer.name);
+                        if (hasSubs) {
+                            Sidebar.expandedGroups[consumer.name] = !Sidebar.expandedGroups[consumer.name];
+                        }
+                    }
+                }
+            }, [
+                m('.status-dot'),
+                m('.consumer-item-label', consumer.name),
+                hasSubs ? m('span.consumer-toggle', expanded ? '\u25BC' : '\u25B6') : null
+            ]));
 
-            /* DLT sub-topic */
-            if (consumer.dlt) {
-                items.push(renderDltItem(consumer.name, consumer.dlt));
-            }
-
-            /* Retry sub-topic */
-            if (consumer.retry) {
-                var isRetryActive = AppState.selectedTopic === consumer.retry.name;
-                items.push(renderTopicItem(
-                    consumer.retry.name, consumer.retry.messageCount, isRetryActive, true
-                ));
+            /* DLT and retry sub-topics (only when expanded) */
+            if (expanded) {
+                if (consumer.dlt) {
+                    items.push(renderDltItem(consumer.name, consumer.dlt));
+                }
+                if (consumer.retry) {
+                    var isRetryActive = AppState.selectedTopic === consumer.retry.name;
+                    items.push(renderTopicItem(
+                        consumer.retry.name, isRetryActive, true
+                    ));
+                }
             }
 
             return items;
         }
 
-        /* Count total topics including sub-topics */
-        var totalCount = 0;
-        AppState.consumers.forEach(function (c) {
-            if (typeof c === 'string') {
-                totalCount++;
-            } else {
-                totalCount++;
-                if (c.dlt) totalCount++;
-                if (c.retry) totalCount++;
-            }
-        });
-
         return m('aside.sidebar', [
-            m('.sidebar-header', m('h2', 'Kafka Consumers')),
-
-            /* View toggle: Poll / Browse */
-            !Api.disabled && AppState.consumers.length > 0
-                ? m('.sidebar-view-toggle', [
-                    m('button.btn-view-toggle' + (routePrefix === '/poll' ? '.active' : '') + '[type=button]', {
-                        onclick: function () {
-                            if (AppState.selectedTopic) {
-                                m.route.set('/poll', { topic: AppState.selectedTopic });
-                            } else {
-                                m.route.set('/');
-                            }
-                        }
-                    }, 'Poll'),
-                    m('button.btn-view-toggle' + (routePrefix === '/browse' ? '.active' : '') + '[type=button]', {
-                        onclick: function () {
-                            if (AppState.selectedTopic) {
-                                m.route.set('/browse', { topic: AppState.selectedTopic });
-                            } else {
-                                m.route.set('/browse');
-                            }
-                        }
-                    }, 'Browse')
-                ])
-                : null,
+            m('.sidebar-header', m('h2', 'Kafka consumers')),
 
             m('.sidebar-nav[role=listbox][aria-label=Consumer topics]',
                 Api.disabled

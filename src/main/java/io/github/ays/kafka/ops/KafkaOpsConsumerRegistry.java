@@ -1,6 +1,7 @@
 package io.github.ays.kafka.ops;
 
 import io.github.ays.kafka.ops.KafkaOpsService.NoConsumerFoundException;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -11,11 +12,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.avro.specific.SpecificRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.core.ResolvableType;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 
 @Slf4j
@@ -23,7 +26,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
 
   private static final String DEF_FACTORY_BEAN_NAME = "kafkaListenerContainerFactory";
-  private final Map<String, Map.Entry<KafkaOpsAwareConsumer, KafkaConsumer>> registryMap = new ConcurrentHashMap<>();
+  private final Map<String, RegisteredConsumerEntry> registryMap = new ConcurrentHashMap<>();
   private final ListableBeanFactory beanFactory;
   private final String groupId;
   private final Function<Map<String, Object>, KafkaConsumer> consumerFactory;
@@ -37,14 +40,17 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
     var consumers = getConsumerBeans();
     for (var consumer : consumers) {
       var mainTopicName = consumer.getTopic().getName();
-      var mainInfo = buildTopicInfo(mainTopicName);
+      var entry = registryMap.get(mainTopicName);
+      var keyFormat = entry != null ? codecFormat(entry.getKeyCodec()) : null;
+      var valueFormat = entry != null ? codecFormat(entry.getValueCodec()) : null;
+      var mainInfo = buildTopicInfo(mainTopicName, keyFormat, valueFormat);
 
       if (consumer.getTopic().getDltTopic() != null) {
-        var dltInfo = buildTopicInfo(consumer.getTopic().getDltTopic());
+        var dltInfo = buildTopicInfo(consumer.getTopic().getDltTopic(), null, null);
         mainInfo.setDlt(dltInfo);
       }
       if (consumer.getTopic().getRetryTopic() != null) {
-        var retryInfo = buildTopicInfo(consumer.getTopic().getRetryTopic());
+        var retryInfo = buildTopicInfo(consumer.getTopic().getRetryTopic(), null, null);
         mainInfo.setRetry(retryInfo);
       }
 
@@ -53,12 +59,12 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
     return details;
   }
 
-  private KafkaOpsConsumerInfo buildTopicInfo(String topicName) {
+  private KafkaOpsConsumerInfo buildTopicInfo(String topicName, String keyFormat, String valueFormat) {
     var entry = registryMap.get(topicName);
     if (entry == null) {
       return new KafkaOpsConsumerInfo(topicName, -1, -1);
     }
-    var kafkaConsumer = entry.getValue();
+    var kafkaConsumer = entry.getKafkaConsumer();
     synchronized (kafkaConsumer) {
       try {
         var partitionInfos = kafkaConsumer.partitionsFor(topicName);
@@ -77,7 +83,7 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
             messageCount += (end - begin);
           }
         }
-        return new KafkaOpsConsumerInfo(topicName, partitionCount, messageCount);
+        return new KafkaOpsConsumerInfo(topicName, partitionCount, messageCount, keyFormat, valueFormat);
       } catch (Exception e) {
         log.warn("Failed to get consumer details for topic={}", topicName, e);
         return new KafkaOpsConsumerInfo(topicName, -1, -1);
@@ -85,7 +91,15 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
     }
   }
 
-  Map.Entry<KafkaOpsAwareConsumer, KafkaConsumer> find(String topic) {
+  private static String codecFormat(MessageCodec codec) {
+    if (codec instanceof AvroMessageCodec) return "avro";
+    if (codec instanceof ProtoMessageCodec) return "proto";
+    if (codec instanceof JsonMessageCodec) return "json";
+    if (codec instanceof StringMessageCodec) return "string";
+    return "custom";
+  }
+
+  RegisteredConsumerEntry find(String topic) {
     var entry = registryMap.get(topic);
     if (entry == null) {
       throw new NoConsumerFoundException(
@@ -105,27 +119,101 @@ class KafkaOpsConsumerRegistry implements InitializingBean, DisposableBean {
       props.put("max.poll.records", 1);
       props.put("isolation.level", "read_uncommitted");
 
+      var keyCodec = resolveKeyCodec(consumer);
+      var valueCodec = resolveValueCodec(consumer);
+
       var mainTopicName = consumer.getTopic().getName();
       var mainKafkaConsumer = consumerFactory.apply(props);
-      registryMap.put(mainTopicName, Map.entry(consumer, mainKafkaConsumer));
+      registryMap.put(mainTopicName, new RegisteredConsumerEntry(consumer, mainKafkaConsumer, keyCodec, valueCodec));
 
       if (consumer.getTopic().getDltTopic() != null) {
         var dltProps = new HashMap<>(props);
         var dltKafkaConsumer = consumerFactory.apply(dltProps);
-        registryMap.put(consumer.getTopic().getDltTopic(), Map.entry(consumer, dltKafkaConsumer));
+        registryMap.put(consumer.getTopic().getDltTopic(), new RegisteredConsumerEntry(consumer, dltKafkaConsumer, keyCodec, valueCodec));
       }
 
       if (consumer.getTopic().getRetryTopic() != null) {
         var retryProps = new HashMap<>(props);
         var retryKafkaConsumer = consumerFactory.apply(retryProps);
-        registryMap.put(consumer.getTopic().getRetryTopic(), Map.entry(consumer, retryKafkaConsumer));
+        registryMap.put(consumer.getTopic().getRetryTopic(), new RegisteredConsumerEntry(consumer, retryKafkaConsumer, keyCodec, valueCodec));
       }
     });
   }
 
+  @SuppressWarnings("unchecked")
+  private MessageCodec resolveKeyCodec(KafkaOpsAwareConsumer consumer) {
+    var declared = consumer.getKeyCodec();
+    if (declared != null) {
+      return declared;
+    }
+    var keyType = resolveGenericType(consumer, 0);
+    return resolveCodecForType(keyType, consumer, "key");
+  }
+
+  @SuppressWarnings("unchecked")
+  private MessageCodec resolveValueCodec(KafkaOpsAwareConsumer consumer) {
+    var declared = consumer.getValueCodec();
+    if (declared != null) {
+      return declared;
+    }
+    var valueType = resolveGenericType(consumer, 1);
+    return resolveCodecForType(valueType, consumer, "value");
+  }
+
+  @SuppressWarnings("unchecked")
+  private MessageCodec resolveCodecForType(Class<?> type, KafkaOpsAwareConsumer consumer, String label) {
+    if (type == null) {
+      log.debug("Could not resolve {} type for consumer={}, falling back to StringMessageCodec",
+          label, consumer.getClass().getSimpleName());
+      return new StringMessageCodec();
+    }
+    if (type == String.class) {
+      log.debug("Auto-resolved String {} codec for consumer={}", label, consumer.getClass().getSimpleName());
+      return new StringMessageCodec();
+    }
+    if (SpecificRecord.class.isAssignableFrom(type)) {
+      log.debug("Auto-resolved Avro {} codec for consumer={}, type={}", label, consumer.getClass().getSimpleName(), type.getSimpleName());
+      return createAvroCodec(type);
+    }
+    if (com.google.protobuf.Message.class.isAssignableFrom(type)) {
+      log.debug("Auto-resolved Proto {} codec for consumer={}, type={}", label, consumer.getClass().getSimpleName(), type.getSimpleName());
+      return createProtoCodec(type);
+    }
+    log.debug("Auto-resolved JSON {} codec for consumer={}, type={}", label, consumer.getClass().getSimpleName(), type.getSimpleName());
+    return new JsonMessageCodec<>(type);
+  }
+
+  @SuppressWarnings("unchecked")
+  private AvroMessageCodec createAvroCodec(Class<?> type) {
+    try {
+      var schema = (org.apache.avro.Schema) type.getMethod("getClassSchema").invoke(null);
+      return new AvroMessageCodec<>(schema);
+    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+      throw new IllegalStateException("Failed to create AvroMessageCodec for " + type.getName()
+          + ". Ensure the class has a static getClassSchema() method.", e);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private ProtoMessageCodec createProtoCodec(Class<?> type) {
+    try {
+      var defaultInstance = (com.google.protobuf.Message) type.getMethod("getDefaultInstance").invoke(null);
+      return new ProtoMessageCodec<>(defaultInstance);
+    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+      throw new IllegalStateException("Failed to create ProtoMessageCodec for " + type.getName()
+          + ". Ensure the class has a static getDefaultInstance() method.", e);
+    }
+  }
+
+  private Class<?> resolveGenericType(KafkaOpsAwareConsumer consumer, int index) {
+    var resolvableType = ResolvableType.forClass(consumer.getClass()).as(KafkaOpsAwareConsumer.class);
+    var generic = resolvableType.getGeneric(index);
+    return generic.resolve();
+  }
+
   @Override
   public void destroy() {
-    registryMap.forEach((k, v) -> v.getValue().close());
+    registryMap.forEach((k, v) -> v.getKafkaConsumer().close());
   }
 
   private Collection<KafkaOpsAwareConsumer> getConsumerBeans() {

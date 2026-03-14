@@ -16,15 +16,22 @@ var AppState = {
         return null;
     },
 
-    /* Find the topic info (partitions, messageCount) for any topic name (main, DLT, or retry) */
+    /* Find the topic info (partitions, messageCount, formats) for any topic name (main, DLT, or retry) */
     findTopicInfo: function (topicName) {
         for (var i = 0; i < this.consumers.length; i++) {
             var c = this.consumers[i];
-            if (c.name === topicName) return { partitions: c.partitions, messageCount: c.messageCount };
-            if (c.dlt && c.dlt.name === topicName) return { partitions: c.dlt.partitions, messageCount: c.dlt.messageCount };
-            if (c.retry && c.retry.name === topicName) return { partitions: c.retry.partitions, messageCount: c.retry.messageCount };
+            if (c.name === topicName) return { partitions: c.partitions, messageCount: c.messageCount, keyFormat: c.keyFormat, valueFormat: c.valueFormat };
+            if (c.dlt && c.dlt.name === topicName) return { partitions: c.dlt.partitions, messageCount: c.dlt.messageCount, keyFormat: c.keyFormat, valueFormat: c.valueFormat };
+            if (c.retry && c.retry.name === topicName) return { partitions: c.retry.partitions, messageCount: c.retry.messageCount, keyFormat: c.keyFormat, valueFormat: c.valueFormat };
         }
         return null;
+    },
+
+    /* Map codec format code to display name */
+    formatLabel: function (fmt) {
+        if (!fmt) return '';
+        var labels = { avro: 'Avro', proto: 'Protobuf', json: 'Json', string: 'String' };
+        return labels[fmt] || fmt;
     },
 
     /* Format a message count for display (e.g. 1500 → "1.5K") */
@@ -33,6 +40,20 @@ var AppState = {
         if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
         if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
         return String(count);
+    },
+
+    /* Re-fetch consumer metadata from the API (non-blocking, updates in background) */
+    refreshConsumers: function () {
+        if (!Api.basePath || Api.disabled) return;
+        Api.getConsumers().then(function (data) {
+            if (Array.isArray(data)) {
+                AppState.consumers = data.sort(function (a, b) {
+                    var nameA = (typeof a === 'string') ? a : (a.name || '');
+                    var nameB = (typeof b === 'string') ? b : (b.name || '');
+                    return nameA.localeCompare(nameB);
+                });
+            }
+        }).catch(function () { /* ignore — non-critical refresh */ });
     },
 
     /* Find the main topic name for a given topic (DLT or retry resolves to parent) */

@@ -1,6 +1,7 @@
 package io.github.ays.kafka.ops;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -12,9 +13,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.ays.kafka.ops.KafkaOpsService.NoConsumerFoundException;
+import io.github.ays.kafka.ops.avro.TestRecord;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
@@ -55,7 +61,7 @@ class KafkaOpsConsumerRegistryTest {
 
     // then
     assertNotNull(result);
-    assertEquals(contractMock, result.getKey());
+    assertEquals(contractMock, result.getConsumer());
   }
 
   @Test
@@ -215,6 +221,148 @@ class KafkaOpsConsumerRegistryTest {
     verify(mockKafkaConsumer).close();
   }
 
+  @Test
+  @DisplayName("Auto-resolves JsonMessageCodec for POJO value and StringMessageCodec for String key")
+  void shouldAutoResolveJsonValueCodecForPojoValue() {
+    // prepare
+    var consumer = new PojoConsumer();
+    var registry = buildRegistry(Map.of("pojoBean", consumer));
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    var entry = registry.find("pojo-topic");
+    assertNotNull(entry.getValueCodec());
+    assertInstanceOf(JsonMessageCodec.class, entry.getValueCodec());
+    assertNotNull(entry.getKeyCodec());
+    assertInstanceOf(StringMessageCodec.class, entry.getKeyCodec());
+  }
+
+  @Test
+  @DisplayName("Auto-resolves JsonMessageCodec for both POJO key and POJO value")
+  void shouldAutoResolveJsonKeyCodecForPojoKey() {
+    // prepare
+    var consumer = new PojoKeyConsumer();
+    var registry = buildRegistry(Map.of("pojoKeyBean", consumer));
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    var entry = registry.find("pojo-key-topic");
+    assertNotNull(entry.getKeyCodec());
+    assertInstanceOf(JsonMessageCodec.class, entry.getKeyCodec());
+    assertNotNull(entry.getValueCodec());
+    assertInstanceOf(JsonMessageCodec.class, entry.getValueCodec());
+  }
+
+  @Test
+  @DisplayName("Uses explicit codec when declared, does not auto-resolve")
+  void shouldUseExplicitCodecWhenDeclared() {
+    // prepare
+    var consumer = new AvroConsumerWithCodec();
+    var registry = buildRegistry(Map.of("avroBean", consumer));
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    var entry = registry.find("avro-topic");
+    assertNotNull(entry.getValueCodec());
+    assertInstanceOf(AvroMessageCodec.class, entry.getValueCodec());
+    assertNotNull(entry.getKeyCodec());
+    assertInstanceOf(StringMessageCodec.class, entry.getKeyCodec());
+  }
+
+  @Test
+  @DisplayName("Auto-resolves StringMessageCodec for String key and String value consumer")
+  void shouldAutoResolveStringCodecForStringTypes() {
+    // prepare
+    var consumer = new StringConsumer();
+    var registry = buildRegistry(Map.of("stringBean", consumer));
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    var entry = registry.find("string-topic");
+    assertNotNull(entry.getKeyCodec());
+    assertInstanceOf(StringMessageCodec.class, entry.getKeyCodec());
+    assertNotNull(entry.getValueCodec());
+    assertInstanceOf(StringMessageCodec.class, entry.getValueCodec());
+  }
+
+  @Test
+  @DisplayName("Auto-resolves AvroMessageCodec for Avro value type when no codec declared")
+  void shouldAutoResolveAvroCodecForAvroValue() {
+    // prepare
+    var consumer = new AvroConsumerWithoutCodec();
+    var registry = buildRegistry(Map.of("avroAutoBean", consumer));
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    var entry = registry.find("avro-auto-topic");
+    assertNotNull(entry.getValueCodec());
+    assertInstanceOf(AvroMessageCodec.class, entry.getValueCodec());
+    assertNotNull(entry.getKeyCodec());
+    assertInstanceOf(StringMessageCodec.class, entry.getKeyCodec());
+  }
+
+  @Test
+  @DisplayName("Auto-resolves ProtoMessageCodec for Proto value type when no codec declared")
+  void shouldAutoResolveProtoCodecForProtoValue() {
+    // prepare
+    var consumer = new ProtoConsumerWithoutCodec();
+    var registry = buildRegistry(Map.of("protoAutoBean", consumer));
+
+    // when
+    registry.afterPropertiesSet();
+
+    // then
+    var entry = registry.find("proto-auto-topic");
+    assertNotNull(entry.getValueCodec());
+    assertInstanceOf(ProtoMessageCodec.class, entry.getValueCodec());
+    assertNotNull(entry.getKeyCodec());
+    assertInstanceOf(StringMessageCodec.class, entry.getKeyCodec());
+  }
+
+  @Test
+  @DisplayName("getConsumerDetails includes keyFormat and valueFormat from resolved codecs")
+  void shouldIncludeFormatInConsumerDetails() {
+    // prepare
+    var consumer = new PojoConsumer();
+    var registry = buildRegistry(Map.of("pojoBean", consumer));
+    registry.afterPropertiesSet();
+
+    // when
+    var details = registry.getConsumerDetails();
+
+    // then
+    assertEquals(1, details.size());
+    assertEquals("string", details.get(0).getKeyFormat());
+    assertEquals("json", details.get(0).getValueFormat());
+  }
+
+  @Test
+  @DisplayName("getConsumerDetails returns avro format for Avro consumer")
+  void shouldReturnAvroFormatInConsumerDetails() {
+    // prepare
+    var consumer = new AvroConsumerWithoutCodec();
+    var registry = buildRegistry(Map.of("avroBean", consumer));
+    registry.afterPropertiesSet();
+
+    // when
+    var details = registry.getConsumerDetails();
+
+    // then
+    assertEquals(1, details.size());
+    assertEquals("string", details.get(0).getKeyFormat());
+    assertEquals("avro", details.get(0).getValueFormat());
+  }
+
   @SuppressWarnings("unchecked")
   private KafkaOpsConsumerRegistry buildRegistry(Map<String, KafkaOpsAwareConsumer> consumers) {
     when(beanFactory.getBeansOfType(KafkaOpsAwareConsumer.class)).thenReturn(consumers);
@@ -226,5 +374,80 @@ class KafkaOpsConsumerRegistryTest {
         "bootstrap.servers", "localhost:9092",
         "group.id", "test-group"));
     return new KafkaOpsConsumerRegistry(beanFactory, CONSUMER_GROUP, mockFactory);
+  }
+
+  // --- Test consumer implementations for auto-resolution ---
+
+  @Data
+  @NoArgsConstructor
+  @AllArgsConstructor
+  static class TestPojo {
+    private String name;
+    private int value;
+  }
+
+  static class PojoConsumer implements KafkaOpsAwareConsumer<String, TestPojo> {
+    @Override
+    public void consume(ConsumerRecord<String, TestPojo> consumerRecord) {}
+
+    @Override
+    public TopicConfig getTopic() {
+      return TopicConfig.of("pojo-topic");
+    }
+  }
+
+  static class PojoKeyConsumer implements KafkaOpsAwareConsumer<TestPojo, TestPojo> {
+    @Override
+    public void consume(ConsumerRecord<TestPojo, TestPojo> consumerRecord) {}
+
+    @Override
+    public TopicConfig getTopic() {
+      return TopicConfig.of("pojo-key-topic");
+    }
+  }
+
+  static class StringConsumer implements KafkaOpsAwareConsumer<String, String> {
+    @Override
+    public void consume(ConsumerRecord<String, String> consumerRecord) {}
+
+    @Override
+    public TopicConfig getTopic() {
+      return TopicConfig.of("string-topic");
+    }
+  }
+
+  static class AvroConsumerWithCodec implements KafkaOpsAwareConsumer<String, TestRecord> {
+    @Override
+    public void consume(ConsumerRecord<String, TestRecord> consumerRecord) {}
+
+    @Override
+    public TopicConfig getTopic() {
+      return TopicConfig.of("avro-topic");
+    }
+
+    @Override
+    public MessageCodec<TestRecord> getValueCodec() {
+      return new AvroMessageCodec<>(TestRecord.getClassSchema());
+    }
+  }
+
+  static class AvroConsumerWithoutCodec implements KafkaOpsAwareConsumer<String, TestRecord> {
+    @Override
+    public void consume(ConsumerRecord<String, TestRecord> consumerRecord) {}
+
+    @Override
+    public TopicConfig getTopic() {
+      return TopicConfig.of("avro-auto-topic");
+    }
+  }
+
+  static class ProtoConsumerWithoutCodec implements KafkaOpsAwareConsumer<String, com.google.protobuf.Struct> {
+    @Override
+    public void consume(ConsumerRecord<String, com.google.protobuf.Struct> consumerRecord) {}
+
+    @Override
+    public TopicConfig getTopic() {
+      return TopicConfig.of("proto-auto-topic");
+    }
   }
 }
