@@ -26,6 +26,11 @@ var BrowseView = (function () {
 
     var anyBusy = function () { return state.loading || state.retrying || state.sending; };
 
+    function autoSizeTextarea(el) {
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+    }
+
     function formatTimestamp(ts) {
         if (!ts) return '';
         try {
@@ -60,7 +65,8 @@ var BrowseView = (function () {
                     style: 'cursor:pointer'
                 }, 'Key ' + (state.keyExpanded ? '\u25BC' : '\u25B6')),
                 state.keyExpanded
-                    ? m(JsonViewer, { data: keyStr, instanceKey: 'key:' + record.partition + ':' + record.offset })
+                    ? m('div', { oncreate: function (vnode) { vnode.dom.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } },
+                        m(JsonViewer, { data: keyStr, instanceKey: 'key:' + record.partition + ':' + record.offset }))
                     : null
             ]);
         }
@@ -136,6 +142,7 @@ var BrowseView = (function () {
                 if (!append && state.mode === 'offset') {
                     PollHistory.add(state.topic + ':browse', state.partition, state.startOffset);
                 }
+                AppState.refreshConsumers();
             }
         }).catch(function (e) {
             Toast.error('Batch poll failed: ' + Api.extractError(e));
@@ -294,14 +301,20 @@ var BrowseView = (function () {
             return m(Layout, { wide: true }, [
                 // Topic heading with metadata
                 state.topic
-                    ? m('.poll-topic-heading', [
+                    ? m('.topic-heading', [
                         state.topic,
                         topicInfo ? m('.topic-meta-badges', [
                             topicInfo.partitions !== undefined
-                                ? m('span.meta-badge', topicInfo.partitions + ' partition' + (topicInfo.partitions !== 1 ? 's' : ''))
+                                ? m('span.meta-badge', topicInfo.partitions + ' Partition' + (topicInfo.partitions !== 1 ? 's' : ''))
                                 : null,
                             topicInfo.messageCount !== undefined
-                                ? m('span.meta-badge', AppState.formatCount(topicInfo.messageCount) + ' messages')
+                                ? m('span.meta-badge', AppState.formatCount(topicInfo.messageCount) + ' Message' + (topicInfo.messageCount !== 1 ? 's' : ''))
+                                : null,
+                            topicInfo.keyFormat
+                                ? m('span.meta-badge', 'Key: ' + AppState.formatLabel(topicInfo.keyFormat))
+                                : null,
+                            topicInfo.valueFormat
+                                ? m('span.meta-badge', 'Value: ' + AppState.formatLabel(topicInfo.valueFormat))
                                 : null
                         ]) : null
                     ])
@@ -313,16 +326,16 @@ var BrowseView = (function () {
                     m('.browse-mode-toggle', [
                         m('button.btn.btn-sm' + (state.mode === 'timestamp' ? '.btn-primary' : '.btn-outline') + '[type=button]', {
                             onclick: function () { state.mode = 'timestamp'; }
-                        }, 'By Timestamp'),
+                        }, 'By timestamp'),
                         m('button.btn.btn-sm' + (state.mode === 'offset' ? '.btn-primary' : '.btn-outline') + '[type=button]', {
                             onclick: function () { state.mode = 'offset'; }
-                        }, 'By Offset')
+                        }, 'By offset')
                     ]),
 
                     state.mode === 'timestamp'
                         ? m('.form-grid-2', [
                             m('.form-group', [
-                                m('label', { for: 'browse-ts-input' }, 'Start Timestamp'),
+                                m('label', { for: 'browse-ts-input' }, 'Start timestamp'),
                                 m('input#browse-ts-input', {
                                     type: 'datetime-local',
                                     step: 1,
@@ -357,7 +370,7 @@ var BrowseView = (function () {
                                 })
                             ]),
                             m('.form-group', [
-                                m('label', { for: 'browse-offset-input' }, 'Start Offset'),
+                                m('label', { for: 'browse-offset-input' }, 'Start offset'),
                                 m('input#browse-offset-input', {
                                     type: 'number',
                                     value: state.startOffset,
@@ -401,7 +414,7 @@ var BrowseView = (function () {
                         state.loading && state.records.length === 0
                             ? m('span.spinner')
                             : m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>'),
-                        ' Browse Messages'
+                        ' Browse messages'
                     ])
                 ]),
 
@@ -476,12 +489,13 @@ var BrowseView = (function () {
                                                         style: 'cursor:pointer'
                                                     }, 'Headers (' + Object.keys(record.headers).length + ') ' + (state.headersExpanded ? '\u25BC' : '\u25B6')),
                                                     state.headersExpanded
-                                                        ? m('.headers-grid', Object.keys(record.headers).map(function (k) {
-                                                            return m('.header-entry', { key: k }, [
-                                                                m('span.header-key', k),
-                                                                m('span.header-val', record.headers[k])
-                                                            ]);
-                                                        }))
+                                                        ? m('.headers-grid', { oncreate: function (vnode) { vnode.dom.scrollIntoView({ behavior: 'smooth', block: 'end' }); } },
+                                                            Object.keys(record.headers).map(function (k) {
+                                                                return m('.header-entry', { key: k }, [
+                                                                    m('span.header-key', k),
+                                                                    m('span.header-val', record.headers[k])
+                                                                ]);
+                                                            }))
                                                         : null
                                                 ])
                                                 : null,
@@ -511,7 +525,7 @@ var BrowseView = (function () {
                                                     }
                                                 }, [
                                                     m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>'),
-                                                    ' Edit & Correct'
+                                                    ' Edit & correct'
                                                 ])
                                             ]),
 
@@ -522,7 +536,7 @@ var BrowseView = (function () {
                                                 onkeydown: function (e) { if (e.key === 'Escape') closeEditor(); }
                                             }, [
                                                 m('.correction-header', [
-                                                    m('span', 'Edit & Correct — ' + state.topic),
+                                                    m('span', 'Edit & correct — ' + state.topic),
                                                     m('button.btn-icon[type=button]', {
                                                         onclick: function (e) {
                                                             e.stopPropagation();
@@ -532,12 +546,13 @@ var BrowseView = (function () {
                                                     }, m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'))
                                                 ]),
                                                 state.correctionKey ? m('label', { style: 'margin-bottom:0.25rem;font-weight:600' }, 'Key') : null,
-                                                state.correctionKey ? m('textarea.correction-textarea', {
+                                                state.correctionKey ? m('textarea.correction-textarea-key', {
                                                     value: state.correctionKey,
-                                                    oninput: function (e) { state.correctionKey = e.target.value; },
+                                                    oninput: function (e) { state.correctionKey = e.target.value; autoSizeTextarea(e.target); },
                                                     spellcheck: false,
-                                                    rows: 3,
-                                                    style: 'min-height:3rem',
+                                                    rows: 1,
+                                                    oncreate: function (vnode) { autoSizeTextarea(vnode.dom); },
+                                                    onupdate: function (vnode) { autoSizeTextarea(vnode.dom); },
                                                     onclick: function (e) { e.stopPropagation(); }
                                                 }) : null,
                                                 m('label', { style: 'margin-bottom:0.25rem;' + (state.correctionKey ? 'margin-top:0.75rem;' : '') + 'font-weight:600' }, 'Value'),
@@ -559,7 +574,7 @@ var BrowseView = (function () {
                                                         state.sending
                                                             ? m('span.spinner')
                                                             : m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'),
-                                                        ' Send Correction'
+                                                        ' Send correction'
                                                     ])
                                                 ])
                                             ]) : null
@@ -580,7 +595,7 @@ var BrowseView = (function () {
                         state.loading
                             ? m('span.spinner')
                             : m.trust('<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/></svg>'),
-                        ' Load More'
+                        ' Load more'
                     ]) : null
                 ]) : null,
 

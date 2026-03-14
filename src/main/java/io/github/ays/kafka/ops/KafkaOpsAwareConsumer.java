@@ -19,11 +19,11 @@ public interface KafkaOpsAwareConsumer<K, T> {
     return null;
   }
 
-  default ValueCodec<K> getKeyCodec() {
+  default MessageCodec<K> getKeyCodec() {
     return null;
   }
 
-  default ValueCodec<T> getValueCodec() {
+  default MessageCodec<T> getValueCodec() {
     return null;
   }
 }

@@ -1,57 +1,68 @@
 # Message Formats
 
-The library auto-detects common key and value types for poll and browse responses: String, Avro, Protobuf, and Jackson-serializable POJOs.
+The library **auto-resolves codecs** for all built-in types at registration time — no manual override needed for most consumers:
 
-For the **corrections endpoint** — which needs to deserialize JSON back into your value type — you need to provide a codec.
+| Type | Auto-resolved codec |
+|------|-------------------|
+| Plain POJO (Jackson) | `JsonMessageCodec` |
+| `String` | `StringMessageCodec` |
+| Avro `SpecificRecord` | `AvroMessageCodec` |
+| Protobuf `Message` | `ProtoMessageCodec` |
 
-## Avro
+This applies symmetrically to both **keys** and **values**. For example, a consumer with `<ShipmentKey, ShipmentEvent>` (both POJOs) needs no codec overrides — the library detects both types and creates `JsonMessageCodec` instances automatically.
+
+## Explicit codec overrides
+
+You can still override `getKeyCodec()` or `getValueCodec()` if needed (e.g. for custom formats). Explicit codecs take precedence over auto-resolution.
+
+### Avro
 
 === "Java"
 
     ```java
     @Override
-    public ValueCodec<OrderEvent> getValueCodec() {
-        return new AvroValueCodec<>(OrderEvent.getClassSchema());
+    public MessageCodec<OrderEvent> getValueCodec() {
+        return new AvroMessageCodec<>(OrderEvent.getClassSchema());
     }
     ```
 
 === "Kotlin"
 
     ```kotlin
-    override fun getValueCodec(): ValueCodec<OrderEvent> =
-        AvroValueCodec(OrderEvent.getClassSchema())
+    override fun getValueCodec(): MessageCodec<OrderEvent> =
+        AvroMessageCodec(OrderEvent.getClassSchema())
     ```
 
 Requires `org.apache.avro:avro` on the classpath (declared as `provided` by the library).
 
-## Protobuf
+### Protobuf
 
 === "Java"
 
     ```java
     @Override
-    public ValueCodec<OrderEvent> getValueCodec() {
-        return new ProtoValueCodec<>(OrderEvent.getDefaultInstance());
+    public MessageCodec<OrderEvent> getValueCodec() {
+        return new ProtoMessageCodec<>(OrderEvent.getDefaultInstance());
     }
     ```
 
 === "Kotlin"
 
     ```kotlin
-    override fun getValueCodec(): ValueCodec<OrderEvent> =
-        ProtoValueCodec(OrderEvent.getDefaultInstance())
+    override fun getValueCodec(): MessageCodec<OrderEvent> =
+        ProtoMessageCodec(OrderEvent.getDefaultInstance())
     ```
 
 Requires `com.google.protobuf:protobuf-java` and `com.google.protobuf:protobuf-java-util` on the classpath (both declared as `provided`).
 
 ## Custom formats
 
-Implement `ValueCodec<T>` directly for any format:
+Implement `MessageCodec<T>` directly for any format:
 
 === "Java"
 
     ```java
-    public class ThriftValueCodec<T> implements ValueCodec<T> {
+    public class ThriftMessageCodec<T> implements MessageCodec<T> {
 
         @Override
         public String toJson(T value) {
@@ -68,7 +79,7 @@ Implement `ValueCodec<T>` directly for any format:
 === "Kotlin"
 
     ```kotlin
-    class ThriftValueCodec<T> : ValueCodec<T> {
+    class ThriftMessageCodec<T> : MessageCodec<T> {
 
         override fun toJson(value: T): String {
             // serialize your value to JSON string
@@ -86,22 +97,20 @@ Then declare it on your consumer:
 
     ```java
     @Override
-    public ValueCodec<OrderEvent> getValueCodec() {
-        return new ThriftValueCodec<>();
+    public MessageCodec<OrderEvent> getValueCodec() {
+        return new ThriftMessageCodec<>();
     }
     ```
 
 === "Kotlin"
 
     ```kotlin
-    override fun getValueCodec(): ValueCodec<OrderEvent> = ThriftValueCodec()
+    override fun getValueCodec(): MessageCodec<OrderEvent> = ThriftMessageCodec()
     ```
 
-## Key serialization
+## Key codec overrides
 
-Keys are auto-detected for built-in types (String, Avro, Protobuf, Jackson POJOs) — no configuration needed for poll and browse.
-
-For non-String key types, override `getKeyCodec()` using the same codecs available for values:
+Keys are auto-resolved just like values. Override `getKeyCodec()` only when you need a custom codec:
 
 === "Protobuf key"
 
@@ -109,34 +118,16 @@ For non-String key types, override `getKeyCodec()` using the same codecs availab
 
         ```java
         @Override
-        public ValueCodec<OrderKey> getKeyCodec() {
-            return new ProtoValueCodec<>(OrderKey.getDefaultInstance());
+        public MessageCodec<OrderKey> getKeyCodec() {
+            return new ProtoMessageCodec<>(OrderKey.getDefaultInstance());
         }
         ```
 
     === "Kotlin"
 
         ```kotlin
-        override fun getKeyCodec(): ValueCodec<OrderKey> =
-            ProtoValueCodec(OrderKey.getDefaultInstance())
-        ```
-
-=== "Avro key"
-
-    === "Java"
-
-        ```java
-        @Override
-        public ValueCodec<OrderKey> getKeyCodec() {
-            return new AvroValueCodec<>(OrderKey.getClassSchema());
-        }
-        ```
-
-    === "Kotlin"
-
-        ```kotlin
-        override fun getKeyCodec(): ValueCodec<OrderKey> =
-            AvroValueCodec(OrderKey.getClassSchema())
+        override fun getKeyCodec(): MessageCodec<OrderKey> =
+            ProtoMessageCodec(OrderKey.getDefaultInstance())
         ```
 
 === "Custom key"
@@ -145,8 +136,8 @@ For non-String key types, override `getKeyCodec()` using the same codecs availab
 
         ```java
         @Override
-        public ValueCodec<MyKey> getKeyCodec() {
-            return new ValueCodec<>() {
+        public MessageCodec<MyKey> getKeyCodec() {
+            return new MessageCodec<>() {
                 @Override public String toJson(MyKey value) { /* serialize to JSON */ }
                 @Override public MyKey fromJson(String json) { /* deserialize from JSON */ }
             };
@@ -156,7 +147,7 @@ For non-String key types, override `getKeyCodec()` using the same codecs availab
     === "Kotlin"
 
         ```kotlin
-        override fun getKeyCodec(): ValueCodec<MyKey> = object : ValueCodec<MyKey> {
+        override fun getKeyCodec(): MessageCodec<MyKey> = object : MessageCodec<MyKey> {
             override fun toJson(value: MyKey): String { /* serialize to JSON */ }
             override fun fromJson(json: String): MyKey { /* deserialize from JSON */ }
         }

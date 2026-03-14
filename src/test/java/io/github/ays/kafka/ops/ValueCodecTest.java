@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import io.github.ays.kafka.ops.avro.TestRecord;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -15,10 +18,10 @@ import org.junit.jupiter.api.Test;
 class ValueCodecTest {
 
   @Nested
-  @DisplayName("AvroValueCodec")
-  class AvroValueCodecTests {
+  @DisplayName("AvroMessageCodec")
+  class AvroMessageCodecTests {
 
-    private final AvroValueCodec<TestRecord> codec = new AvroValueCodec<>(TestRecord.getClassSchema());
+    private final AvroMessageCodec<TestRecord> codec = new AvroMessageCodec<>(TestRecord.getClassSchema());
 
     @Test
     @DisplayName("toJson converts Avro record to JSON string")
@@ -71,10 +74,67 @@ class ValueCodecTest {
   }
 
   @Nested
-  @DisplayName("ProtoValueCodec")
-  class ProtoValueCodecTests {
+  @DisplayName("JsonMessageCodec")
+  class JsonMessageCodecTests {
 
-    private final ProtoValueCodec<Struct> codec = new ProtoValueCodec<>(Struct.getDefaultInstance());
+    private final JsonMessageCodec<TestPojo> codec = new JsonMessageCodec<>(TestPojo.class);
+
+    @Test
+    @DisplayName("toJson converts POJO to JSON string")
+    void shouldConvertPojoToJson() {
+      // prepare
+      var pojo = new TestPojo("junit", 42);
+
+      // when
+      var json = codec.toJson(pojo);
+
+      // then
+      assertTrue(json.contains("\"name\":\"junit\""));
+      assertTrue(json.contains("\"value\":42"));
+    }
+
+    @Test
+    @DisplayName("fromJson converts JSON string to POJO")
+    void shouldConvertJsonToPojo() {
+      // prepare
+      var json = "{\"name\":\"junit\",\"value\":42}";
+
+      // when
+      var pojo = codec.fromJson(json);
+
+      // then
+      assertNotNull(pojo);
+      assertEquals("junit", pojo.getName());
+      assertEquals(42, pojo.getValue());
+    }
+
+    @Test
+    @DisplayName("round-trip preserves data")
+    void shouldRoundTrip() {
+      // prepare
+      var original = new TestPojo("round-trip", 99);
+
+      // when
+      var json = codec.toJson(original);
+      var restored = codec.fromJson(json);
+
+      // then
+      assertEquals(original.getName(), restored.getName());
+      assertEquals(original.getValue(), restored.getValue());
+    }
+
+    @Test
+    @DisplayName("fromJson throws on malformed JSON")
+    void shouldThrowOnMalformedJson() {
+      assertThrows(Exception.class, () -> codec.fromJson("not valid json"));
+    }
+  }
+
+  @Nested
+  @DisplayName("ProtoMessageCodec")
+  class ProtoMessageCodecTests {
+
+    private final ProtoMessageCodec<Struct> codec = new ProtoMessageCodec<>(Struct.getDefaultInstance());
 
     @Test
     @DisplayName("toJson converts proto message to JSON string")
@@ -138,5 +198,54 @@ class ValueCodecTest {
       assertNotNull(struct);
       assertTrue(struct.getFieldsMap().containsKey("name"));
     }
+  }
+
+  @Nested
+  @DisplayName("StringMessageCodec")
+  class StringMessageCodecTests {
+
+    private final StringMessageCodec codec = new StringMessageCodec();
+
+    @Test
+    @DisplayName("toJson returns value as-is")
+    void shouldReturnValueAsIs() {
+      assertEquals("hello", codec.toJson("hello"));
+    }
+
+    @Test
+    @DisplayName("fromJson returns json as-is")
+    void shouldReturnJsonAsIs() {
+      assertEquals("{\"key\":1}", codec.fromJson("{\"key\":1}"));
+    }
+
+    @Test
+    @DisplayName("round-trip preserves data")
+    void shouldRoundTrip() {
+      // prepare
+      var original = "some-string-value";
+
+      // when
+      var json = codec.toJson(original);
+      var restored = codec.fromJson(json);
+
+      // then
+      assertEquals(original, restored);
+    }
+
+    @Test
+    @DisplayName("handles null")
+    void shouldHandleNull() {
+      assertNotNull(codec);
+      assertEquals(null, codec.toJson(null));
+      assertEquals(null, codec.fromJson(null));
+    }
+  }
+
+  @Data
+  @NoArgsConstructor
+  @AllArgsConstructor
+  static class TestPojo {
+    private String name;
+    private int value;
   }
 }
