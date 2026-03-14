@@ -65,7 +65,8 @@ var BrowseView = (function () {
                     style: 'cursor:pointer'
                 }, 'Key ' + (state.keyExpanded ? '\u25BC' : '\u25B6')),
                 state.keyExpanded
-                    ? m(JsonViewer, { data: keyStr, instanceKey: 'key:' + record.partition + ':' + record.offset })
+                    ? m('div', { oncreate: function (vnode) { vnode.dom.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } },
+                        m(JsonViewer, { data: keyStr, instanceKey: 'key:' + record.partition + ':' + record.offset }))
                     : null
             ]);
         }
@@ -488,12 +489,13 @@ var BrowseView = (function () {
                                                         style: 'cursor:pointer'
                                                     }, 'Headers (' + Object.keys(record.headers).length + ') ' + (state.headersExpanded ? '\u25BC' : '\u25B6')),
                                                     state.headersExpanded
-                                                        ? m('.headers-grid', Object.keys(record.headers).map(function (k) {
-                                                            return m('.header-entry', { key: k }, [
-                                                                m('span.header-key', k),
-                                                                m('span.header-val', record.headers[k])
-                                                            ]);
-                                                        }))
+                                                        ? m('.headers-grid', { oncreate: function (vnode) { vnode.dom.scrollIntoView({ behavior: 'smooth', block: 'end' }); } },
+                                                            Object.keys(record.headers).map(function (k) {
+                                                                return m('.header-entry', { key: k }, [
+                                                                    m('span.header-key', k),
+                                                                    m('span.header-val', record.headers[k])
+                                                                ]);
+                                                            }))
                                                         : null
                                                 ])
                                                 : null,
