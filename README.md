@@ -15,6 +15,8 @@ A Spring Boot starter that adds REST endpoints and an embedded web console for K
 
 ![Console Demo](docs/assets/console-demo.gif)
 
+**[See the full demo with Avro, Protobuf, and JSON consumers](https://github.com/AhmedSarie/spring-boot-starter-kafka-ops-demo)**
+
 ## Installation
 
 **Maven:**
