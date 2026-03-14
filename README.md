@@ -24,13 +24,13 @@ A Spring Boot starter that adds REST endpoints and an embedded web console for K
 <dependency>
     <groupId>io.github.ahmedsarie</groupId>
     <artifactId>spring-boot-starter-kafka-ops</artifactId>
-    <version>0.1.7</version>
+    <version>0.2.5</version>
 </dependency>
 ```
 
 **Gradle:**
 ```kotlin
-implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.1.7")
+implementation("io.github.ahmedsarie:spring-boot-starter-kafka-ops:0.2.5")
 ```
 
 ## Quick Start
