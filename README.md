@@ -13,8 +13,7 @@ A Spring Boot starter that adds REST endpoints and an embedded web console for K
 - **Web console** — Browser-based UI embedded in your service, no separate deployment
 - **Zero config** — Auto-discovers your consumers at startup, uses your app's own serialization
 
-<!-- TODO: Add console screenshot -->
-<!-- ![Console](docs/assets/console-screenshot.png) -->
+![Console Demo](docs/assets/console-demo.gif)
 
 ## Installation
 
