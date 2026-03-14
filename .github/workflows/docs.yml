@@ -3,7 +3,6 @@ name: Deploy docs
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'mkdocs.yml']
   workflow_dispatch:
 
 permissions:
