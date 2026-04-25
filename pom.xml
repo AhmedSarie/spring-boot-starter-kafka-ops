@@ -47,7 +47,7 @@
         <avro.version>1.11.1</avro.version>
         <protobuf.version>3.25.5</protobuf.version>
         <awaitility.version>4.3.0</awaitility.version>
-        <avro-serializer.version>7.3.3</avro-serializer.version>
+        <avro-serializer.version>8.2.0</avro-serializer.version>
     </properties>
 
     <dependencies>
